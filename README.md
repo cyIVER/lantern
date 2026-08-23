@@ -13,7 +13,7 @@ Named for a beacon on the LAN.
 | Design decisions | ✅ Recorded in [docs/DECISIONS.md](docs/DECISIONS.md) |
 | Docker storage on E: | ✅ Migrated (65 GB reclaimed from C:) |
 | Router MCP server | ✅ Built — 9 read-only tools + 1 gated write — [docs/ROUTER-MCP.md](docs/ROUTER-MCP.md) |
-| DHCP reservation | ✅ `192.168.0.115` pinned to `A0-36-BC-BA-5A-C3` |
+| Host addressing | ✅ static `192.168.0.115` on Ethernet 5 (see [incident](docs/ROUTER-MCP.md)) |
 | Pelican Panel + Wings stack | ⬜ Next |
 | CS2 egg with `MODE` variable | ⬜ Pending |
 | Plugin bootstrap | ⬜ Pending |
@@ -35,7 +35,7 @@ docs/        decision record and component docs
 | | |
 |---|---|
 | Host | `IVERSON_PC` — i5-13600KF, 32 GB, 2.5 GbE |
-| Host IP | `192.168.0.115` — reserved on the router |
+| Host IP | `192.168.0.115` — **static on Windows**; router reservation kept only as a conflict guard |
 | Router | TP-Link Archer BE230, firmware 1.2.5, at `192.168.0.1` |
 | Panel | `http://192.168.0.115` (planned) |
 | CS2 | `connect 192.168.0.115:27015` |

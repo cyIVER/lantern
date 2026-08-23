@@ -98,3 +98,62 @@ Writes are intentionally not in v1. The intended design, once the LANtern panel 
 
 The agent proposes, a human with the password disposes. Candidate writes:
 `add_ipv4_reservation`, `set_wifi(band, enable)`, `set_ipv4_dhcps`, `reboot`.
+
+---
+
+## Incident: DHCP reservation broke the wired connection
+
+**Do not add a DHCP reservation for a MAC that already holds a live dynamic lease
+for that same address on this router.**
+
+What happened: a reservation was added for `A0-36-BC-BA-5A-C3 -> 192.168.0.115`
+while that MAC already had an active lease for `.115`. Nothing broke immediately.
+Just over an hour later the **120-minute lease came up for renewal**, and the router
+stopped answering DHCP for that client entirely. Windows fell back to APIPA
+(`169.254.x`) and silently failed over to WiFi.
+
+Diagnosis that actually identified it:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Dhcp-Client/Admin'} -MaxEvents 5
+```
+
+Error `0x79` = `ERROR_SEM_TIMEOUT`: the DHCP server sent **no reply**. The adapter
+itself was fine throughout -- `Up`, `Connected`, 2.5 Gbps, DHCP enabled. The router's
+table showed the reservation *and* a stale dynamic lease for the same MAC/IP
+simultaneously.
+
+**Resolution: a static IP on Windows**, which is the better arrangement for a server
+host anyway. The reservation is deliberately left in place so the router will never
+hand `.115` to another device.
+
+```powershell
+Set-NetIPInterface -InterfaceAlias "Ethernet 5" -Dhcp Disabled
+Remove-NetIPAddress -InterfaceAlias "Ethernet 5" -Confirm:$false
+New-NetIPAddress -InterfaceAlias "Ethernet 5" -IPAddress 192.168.0.115 `
+    -PrefixLength 24 -DefaultGateway 192.168.0.1
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet 5" -ServerAddresses 192.168.0.1
+```
+
+### Reservations cannot be deleted through this API
+
+`admin/dhcps?form=reservation` supports `operation=load` and `operation=insert`
+(that is what `add_ipv4_reservation` uses). `operation=remove` **is** a real callback
+-- it dispatches -- but every key shape tried returned the router's Lua
+`assertion failed`: bare MAC, entry JSON, row index, `index=`, IP, `[0]`, `[0]` as
+JSON. `operation=delete` does not exist (`no such callback`).
+
+Delete reservations in the web UI: **Advanced -> Network -> DHCP Server ->
+Address Reservation**.
+
+### Useful facts about this router
+
+```
+DHCP pool   192.168.0.2 - 192.168.0.253      (no room outside it for statics
+lease time  120                               without shrinking the pool first)
+LAN         192.168.0.1 / 255.255.255.0
+WAN         <your-wan-ip>
+```
+
+`netinfo.py` dumps all of the above, including the raw DHCP settings the typed
+dataclasses do not expose.
