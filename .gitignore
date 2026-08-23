@@ -19,3 +19,8 @@ desktop.ini
 .venv/
 __pycache__/
 *.pyc
+
+# WeaponPaints DB credentials (generated)
+.weaponpaints-db
+stack/.weaponpaints-db
+stack/startup.log

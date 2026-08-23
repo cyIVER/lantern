@@ -71,6 +71,13 @@ for set_dir in */; do
         done
     fi
 
+    # 2b. Drop loose files from plugins/. CSSharp only loads directories, but a
+    # stray README.txt sitting there shows up in the "active plugins" line and
+    # makes that diagnostic misleading.
+    if [ -d "$set_name/addons/counterstrikesharp/plugins" ]; then
+        find "$set_name/addons/counterstrikesharp/plugins" -maxdepth 1 -type f -delete 2>/dev/null
+    fi
+
     # 3. Record which plugin directories this set owns.
     # Directories only: loose files like README.txt are not plugins, and
     # CSSharp's shared 'disabled' directory must never be attributed to one set.
