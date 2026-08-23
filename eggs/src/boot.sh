@@ -65,7 +65,11 @@ if [ -d "$STAGE" ]; then
     case "$MODE" in
         competitive) SETS="$SETS matchzy" ;;
         retakes)     SETS="$SETS retakes" ;;
-        practice)    SETS="$SETS practice" ;;
+        practice)    # CS2-Practice-Plugin v1.0.0.3 targets a 2024 CounterStrikeSharp
+                     # and segfaults the server against current builds. Refuse
+                     # rather than boot into a crash loop.
+                     say "practice mode is disabled (CSPracc crashes current CS2); using competitive"
+                     MODE=competitive; SETS="$SETS matchzy" ;;
         deathmatch)  ;;                                   # vanilla DM, admin only
         *)           say "Unknown MODE '$MODE', falling back to competitive"
                      MODE=competitive; SETS="$SETS matchzy" ;;

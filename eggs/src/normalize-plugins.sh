@@ -109,6 +109,31 @@ for set_dir in */; do
                    rm -rf "$item" ;;
             esac
         done
+
+        # gamedata/ and configs/ are SHARED directories: plugins legitimately add
+        # their own files (weaponpaints.json), but the platform owns specific
+        # ones. Practice ships the core gamedata.json -- the engine signature
+        # table. Overwriting it with a 2024 copy makes CSSharp fail to find
+        # Host_Say, GetLegacyGameEventListener and friends, then segfault the
+        # whole server. Strip at file level, not directory level.
+        for core in gamedata.json schema_classes.txt schema_enums.txt; do
+            if [ -e "$css/gamedata/$core" ]; then
+                echo "      stripping platform gamedata: $core"
+                rm -f "$css/gamedata/$core"
+            fi
+        done
+
+        # In configs/, only the plugins/ subdirectory belongs to plugins; the
+        # rest (core.example.json, admins.example.json, ...) is platform.
+        if [ -d "$css/configs" ]; then
+            for item in "$css/configs"/*; do
+                [ -e "$item" ] || continue
+                if [ "$(basename "$item")" != "plugins" ]; then
+                    echo "      stripping platform config: $(basename "$item")"
+                    rm -rf "$item"
+                fi
+            done
+        fi
     fi
 
     # 2b. Drop loose files from plugins/. CSSharp only loads directories, but a

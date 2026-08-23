@@ -34,12 +34,12 @@ RCON_HOST = os.environ.get("RCON_HOST", "127.0.0.1")
 RCON_PORT = int(os.environ.get("RCON_PORT", "27015"))
 RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "")
 
-MODES = ["competitive", "retakes", "practice", "deathmatch"]
+# practice omitted: CSPracc segfaults current CS2. See docs/USING.md.
+MODES = ["competitive", "retakes", "deathmatch"]
 
 MODE_BLURB = {
     "competitive": "MR12 · knife round · MatchZy",
     "retakes":     "Continuous retakes",
-    "practice":    "Nades · cheats · infinite ammo",
     "deathmatch":  "Vanilla DM",
 }
 

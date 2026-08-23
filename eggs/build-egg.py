@@ -76,8 +76,8 @@ def main() -> int:
     egg["author"] = "iveri@lantern.lan"
     egg["description"] = (
         "Counter-Strike 2 for LAN play. Metamod + CounterStrikeSharp with a MODE "
-        "switch (competitive / retakes / practice / deathmatch) that activates only "
-        "the matching plugin set, because MatchZy, Retakes and PracticeMode conflict "
+        "switch (competitive / retakes / deathmatch) that activates only the matching "
+        "plugin set, because MatchZy and Retakes both hook round flow and conflict "
         "if loaded together. sv_lan 1, no GSLT required."
     )
 
@@ -135,11 +135,13 @@ def main() -> int:
     # leaving both would let the two disagree.
     kept.insert(0, variable(
         "Mode", "MODE", "competitive",
-        ["required", "string", "in:competitive,retakes,practice,deathmatch"],
+        ["required", "string", "in:competitive,retakes,deathmatch"],
         "Which game mode to boot into. Changing this needs a restart. "
         "competitive = MatchZy 5v5 (knife round, .ready, MR12, demos). "
-        "retakes = CS2-Retakes. practice = nade lineups, sv_cheats, infinite ammo. "
-        "deathmatch = vanilla DM. Only the matching plugin set is loaded.",
+        "retakes = CS2-Retakes. deathmatch = vanilla DM. "
+        "Only the matching plugin set is loaded. "
+        "(practice is removed: CS2-Practice-Plugin v1.0.0.3 is built against a 2024 "
+        "CounterStrikeSharp and segfaults the server on current builds.)",
     ))
     kept.append(variable(
         "Enable weapon skins", "ENABLE_SKINS", "0", ["required", "boolean"],
