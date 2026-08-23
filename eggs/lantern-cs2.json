@@ -25,7 +25,7 @@
   },
   "config": {
     "files": "[]",
-    "startup": "{\"done\": \"Connection to Steam servers successful\"}",
+    "startup": "{\"done\": \"GC Connection established\"}",
     "logs": "[]",
     "stop": "quit"
   },

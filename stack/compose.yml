@@ -94,6 +94,24 @@ services:
       - "/tmp/pelican/:/tmp/pelican/"
       - "/etc/ssl/certs:/etc/ssl/certs:ro"
 
+  # CS2 control UI. Hybrid by design: Pelican's client API for power and startup
+  # variables, direct RCON for the live roster and moderation (Pelican's command
+  # endpoint returns no output, so it cannot answer "who is connected").
+  ui:
+    build: ../ui
+    image: lantern/cs2-ui:latest
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    env_file:
+      - ../ui/.env
+    depends_on:
+      - panel
+    extra_hosts:
+      # RCON goes to the published game port on the Windows host, not to a
+      # container -- the game runs on Wings' own network.
+      - "host.docker.internal:host-gateway"
+
 volumes:
   pelican-data:
   pelican-logs:

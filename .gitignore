@@ -24,3 +24,7 @@ __pycache__/
 .weaponpaints-db
 stack/.weaponpaints-db
 stack/startup.log
+
+ui/.env
+ui/.venv/
+ui/static/maps/*.svg

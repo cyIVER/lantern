@@ -84,9 +84,15 @@ def main() -> int:
     egg["startup_commands"] = {"Default": "bash ./lantern/boot.sh"}
     egg["scripts"]["installation"]["script"] = load_scripts()
 
-    # Keep the stock done-string: the server still logs on to Steam with sv_lan 1.
+    # Wings marks a server "running" when this string appears on stdout, and the
+    # panel only renders the console for a running server.
+    #
+    # The stock egg uses "Connection to Steam servers successful", which CS2
+    # never prints here -- so Wings stayed in "starting" forever and the console
+    # never appeared. "GC Connection established" is emitted once the server has
+    # registered with Valve's game coordinator, i.e. genuinely ready for players.
     egg.setdefault("config", {})["startup"] = json.dumps(
-        {"done": "Connection to Steam servers successful"}
+        {"done": "GC Connection established"}
     )
     egg["config"]["stop"] = "quit"
 

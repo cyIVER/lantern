@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LANtern — CS2 Control</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔦</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <h1>LANtern</h1>
+      <p id="hostname">CS2 Control</p>
+    </div>
+  </div>
+
+  <div class="vitals">
+    <div class="vital"><label>State</label><span id="v-state" class="pill unknown">…</span></div>
+    <div class="vital"><label>Map</label><span id="v-map">—</span></div>
+    <div class="vital"><label>Players</label><span id="v-players">—</span></div>
+    <div class="vital"><label>CPU</label><span id="v-cpu">—</span></div>
+    <div class="vital"><label>RAM</label><span id="v-ram">—</span></div>
+    <div class="vital"><label>Uptime</label><span id="v-uptime">—</span></div>
+  </div>
+
+  <div class="power">
+    <button class="btn go"   data-power="start">Start</button>
+    <button class="btn warn" data-power="restart">Restart</button>
+    <button class="btn stop" data-power="stop">Stop</button>
+    <button class="btn kill" data-power="kill" title="Force kill — ungraceful">Kill</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="players">Players</button>
+  <button class="tab" data-tab="maps">Maps</button>
+  <button class="tab" data-tab="mode">Game Mode</button>
+  <button class="tab" data-tab="match">Match</button>
+  <button class="tab" data-tab="console">Console</button>
+</nav>
+
+<main>
+  <!-- ------------------------------------------------------------ PLAYERS -->
+  <section id="tab-players" class="panel active">
+    <div class="panel-head">
+      <h2>Connected Players</h2>
+      <span class="hint" id="players-hint">polling every 4s</span>
+    </div>
+    <div id="players-empty" class="empty">No players connected.</div>
+    <table id="players-table" class="grid" hidden>
+      <thead><tr><th>Type</th><th>Name</th><th>SteamID64</th><th class="right">Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- --------------------------------------------------------------- MAPS -->
+  <section id="tab-maps" class="panel">
+    <div class="panel-head">
+      <h2>Maps</h2>
+      <label class="switch">
+        <input type="checkbox" id="map-persist" checked>
+        <span>Also set as boot map</span>
+      </label>
+    </div>
+    <div id="map-grid" class="maps"></div>
+  </section>
+
+  <!-- --------------------------------------------------------------- MODE -->
+  <section id="tab-mode" class="panel">
+    <div class="panel-head">
+      <h2>Game Mode</h2>
+      <span class="hint">changing mode restarts the server (~40s)</span>
+    </div>
+    <div id="mode-grid" class="modes"></div>
+
+    <div class="panel-head"><h2>Bots</h2></div>
+    <div class="sliders">
+      <div class="slider">
+        <label>Bot quota <output id="out-quota">—</output></label>
+        <input type="range" id="bot-quota" min="0" max="32" step="1">
+        <small>Bots fill empty slots and leave as humans join.</small>
+      </div>
+      <div class="slider">
+        <label>Bot difficulty <output id="out-diff">—</output></label>
+        <input type="range" id="bot-diff" min="0" max="3" step="1">
+        <small>0 easy · 1 normal · 2 hard · 3 expert</small>
+      </div>
+    </div>
+
+    <div class="panel-head"><h2>Options</h2></div>
+    <div class="toggles" id="toggles"></div>
+  </section>
+
+  <!-- -------------------------------------------------------------- MATCH -->
+  <section id="tab-match" class="panel">
+    <div class="panel-head">
+      <h2>Match Control</h2>
+      <span class="hint">MatchZy — competitive mode</span>
+    </div>
+    <div class="actions">
+      <button class="btn big go"   data-match="start">Start Match</button>
+      <button class="btn big"      data-match="knife">Knife Round</button>
+      <button class="btn big warn" data-match="pause">Pause</button>
+      <button class="btn big"      data-match="unpause">Unpause</button>
+      <button class="btn big"      data-match="warmup">Warmup</button>
+      <button class="btn big stop" data-match="restart">Restart Round</button>
+    </div>
+    <p class="note">
+      Players ready up in chat with <code>.ready</code>. Demos record automatically
+      to <code>game/csgo/replays/</code>.
+    </p>
+  </section>
+
+  <!-- ------------------------------------------------------------ CONSOLE -->
+  <section id="tab-console" class="panel">
+    <div class="panel-head">
+      <h2>Console</h2>
+      <span class="hint">RCON — returns output, unlike the panel console</span>
+    </div>
+    <form id="cmd-form" class="cmdbar">
+      <span class="prompt">&gt;</span>
+      <input id="cmd" placeholder="status, mp_freezetime 10, bot_quota 6 …" autocomplete="off">
+      <button class="btn go" type="submit">Send</button>
+    </form>
+    <pre id="output" class="output">Ready.</pre>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
