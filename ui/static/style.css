@@ -297,3 +297,18 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
 }
 .item .nm { font-size: 11.5px; line-height: 1.3; color: var(--text); }
 .item .sub { font-size: 10px; color: var(--dim); margin-top: 3px; }
+
+/* ------------------------------------------------------------------ presets */
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.preset {
+  background: var(--panel); border: 1px solid var(--line); padding: 12px;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.preset.filled { border-color: var(--gold-dim); }
+.preset .slot {
+  font-size: 20px; color: var(--gold); font-weight: 700; line-height: 1;
+}
+.preset .nm { font-size: 12px; margin: 5px 0 3px; color: var(--text); }
+.preset .meta { font-size: 10px; color: var(--dim); min-height: 13px; }
+.preset .row { display: flex; gap: 5px; margin-top: 9px; }
+.preset .row .btn { flex: 1; padding: 4px 6px; font-size: 10px; --cut: 5px; }

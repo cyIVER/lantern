@@ -93,6 +93,38 @@ Everything still works offline; the tiles just render without art.
 > Only SteamID64s are accepted, and only 17-digit `7656119…` values. Bots carry
 > synthetic `9007…` ids and are filtered out of the player picker.
 
+### Presets and `!1` … `!9`
+
+Nine slots per player. **Save** snapshots whatever that player currently has —
+knife with its finish, gloves, every weapon skin — into `lantern_presets`.
+**Apply** copies it back into WeaponPaints' tables.
+
+In game, typing `!1` … `!9` in chat applies that slot. The server confirms in
+chat, and the loadout takes effect on `!wp` or the next respawn.
+
+That chat hook needs the console *stream*, because CS2 has no file logging:
+`-condebug` is inert and `con_logfile` does not exist. Rather than give this
+container the Docker socket, the watcher uses the same websocket the Pelican
+console uses — ask Pelican for a short-lived token, connect to Wings, read.
+
+> Wings rejects the upgrade with a bare **HTTP 403** unless the `Origin` header
+> is the panel URL. And Pelican rate-limits the token endpoint, so the retry
+> backoff starts at 15s — a tight loop turns one failure into a 429 that
+> prolongs the outage.
+
+The watcher does double duty: the console prints
+`"cyIVER<3><[U:1:1362677841]>"` on player events, which is where the roster gets
+SteamIDs that `status_json` leaves blank.
+
+`GET /api/watcher` reports proof-of-life:
+
+```json
+{"connected": true, "lines": 20, "chat": 0, "identities": {}, "slots": {}}
+```
+
+An empty `identities` map on its own means nothing — it only fills when players
+are present. `connected` and a rising `lines` are what show the stream is live.
+
 ## Map icons
 
 Real Valve art, extracted from your own install — no external dependency, works
@@ -135,6 +167,11 @@ Useful if you want to script against it or add a tab.
 | `GET` | `/api/loadout/{steamid64}` | that player's current selections |
 | `POST` | `/api/loadout/knife` \| `/gloves` \| `/skin` | assign |
 | `DELETE` | `/api/loadout/{steamid64}` | wipe their loadout |
+| `GET` | `/api/presets/{steamid64}` | their nine slots |
+| `POST` | `/api/presets` | `{steamid64, slot, name}` — snapshot current loadout |
+| `POST` | `/api/presets/apply` | `{steamid64, slot}` |
+| `DELETE` | `/api/presets/{steamid64}/{slot}` | delete a slot |
+| `GET` | `/api/watcher` | console-stream health |
 
 ```bash
 curl -s http://192.168.0.115:8090/api/players | python -m json.tool

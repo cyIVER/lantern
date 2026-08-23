@@ -475,3 +475,70 @@ setInterval(() => {
     loRefreshPlayers();
   }
 }, 8000);
+
+/* ------------------------------------------------------------------ presets
+   Slots 1-9. "Save" snapshots whatever the player currently has; the console
+   watcher applies them when someone types !1 .. !9 in chat. */
+
+async function loBuildPresets() {
+  const wrap = $('#preset-list');
+  const sid = loSteamId();
+  if (!sid) {
+    wrap.replaceChildren(Object.assign(document.createElement('div'), {
+      className: 'empty', textContent: 'Pick a player to manage their presets.',
+    }));
+    return;
+  }
+  let saved = [];
+  try { saved = await api(`/api/presets/${sid}`); }
+  catch (e) { return toast(e.message, true); }
+  const bySlot = Object.fromEntries(saved.map((p) => [p.slot, p]));
+
+  wrap.replaceChildren(...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((slot) => {
+    const p = bySlot[slot];
+    const el = document.createElement('div');
+    el.className = 'preset' + (p ? ' filled' : '');
+    el.innerHTML = `
+      <div class="slot">!${slot}</div>
+      <div class="nm">${p ? escapeHtml(p.name) : '<span style="color:#5d6b7c">empty</span>'}</div>
+      <div class="meta">${p ? `${p.knife ? p.knife.replace('weapon_knife_', '').replace('weapon_', '') : 'no knife'} · ${p.count} skin(s)` : ''}</div>
+      <div class="row">
+        <button class="btn tiny go" data-a="save">Save</button>
+        ${p ? '<button class="btn tiny" data-a="apply">Apply</button>' : ''}
+        ${p ? '<button class="btn tiny stop" data-a="del">✕</button>' : ''}
+      </div>`;
+
+    el.querySelector('[data-a="save"]').onclick = async () => {
+      const name = prompt(`Name for preset ${slot}?`, p ? p.name : `Preset ${slot}`);
+      if (name === null) return;
+      try {
+        await api('/api/presets', { body: { steamid64: sid, slot, name } });
+        toast(`Saved current loadout to !${slot}`);
+        loBuildPresets();
+      } catch (e) { toast(e.message, true); }
+    };
+    const applyBtn = el.querySelector('[data-a="apply"]');
+    if (applyBtn) applyBtn.onclick = async () => {
+      try {
+        const r = await api('/api/presets/apply', { body: { steamid64: sid, slot } });
+        toast(r.ok ? `Applied "${r.name}" — !wp or respawn` : r.error, !r.ok);
+        loLoadCurrent();
+      } catch (e) { toast(e.message, true); }
+    };
+    const delBtn = el.querySelector('[data-a="del"]');
+    if (delBtn) delBtn.onclick = async () => {
+      if (!confirm(`Delete preset ${slot}?`)) return;
+      try {
+        await api(`/api/presets/${sid}/${slot}`, { method: 'DELETE' });
+        toast(`Deleted !${slot}`);
+        loBuildPresets();
+      } catch (e) { toast(e.message, true); }
+    };
+    return el;
+  }));
+}
+
+// Presets follow whichever player is selected.
+['#lo-player', '#lo-steamid'].forEach((sel) =>
+  $(sel).addEventListener('change', loBuildPresets));
+document.querySelector('[data-tab="loadout"]').addEventListener('click', loBuildPresets);

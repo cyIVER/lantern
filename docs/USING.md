@@ -118,8 +118,11 @@ looked unresponsive if you tried typing a number. Changed via
 `stack/bootstrap/configure-menus.sh`.)
 
 **Or skip the in-game menu entirely**: the control UI's **Loadout** tab assigns
-knives, gloves and weapon skins to any player from the browser. See
-[CONTROL-UI.md](CONTROL-UI.md).
+knives (with finishes), gloves and weapon skins to any player from the browser.
+
+**Loadout presets** — save up to nine complete loadouts per player in the
+Loadout tab, then recall one in chat with `!1` … `!9`. Applies on `!wp` or the
+next respawn. See [CONTROL-UI.md](CONTROL-UI.md).
 
 ## Admins
 

@@ -55,6 +55,11 @@ PRESET_RE = re.compile(r"^[!./](?P<slot>[1-9])\s*$")
 IDENTITIES: dict[str, str] = {}   # name -> steamid64
 SLOTS: dict[int, str] = {}        # slot -> steamid64
 
+# Proof-of-life for the stream: identities only appear when a player event
+# occurs, so an empty map alone cannot distinguish "connected, quiet server"
+# from "not connected at all".
+STATS: dict[str, Any] = {"connected": False, "lines": 0, "last_line": "", "chat": 0}
+
 
 def steam64(acct: str | int) -> str:
     return str(int(acct) + STEAM64_BASE)
@@ -82,6 +87,8 @@ async def _say(message: str) -> None:
 
 async def handle_line(raw: str) -> None:
     line = strip_ansi(raw)
+    STATS["lines"] += 1
+    STATS["last_line"] = line[-160:]
 
     for m in PLAYER_RE.finditer(line):
         sid = steam64(m.group("acct"))
@@ -91,6 +98,7 @@ async def handle_line(raw: str) -> None:
     chat = CHAT_RE.search(line)
     if not chat:
         return
+    STATS["chat"] += 1
     sid = steam64(chat.group("acct"))
     IDENTITIES[chat.group("name")] = sid
 
@@ -123,7 +131,9 @@ async def run() -> None:
     with contextlib.suppress(Exception):
         await asyncio.to_thread(presets.ensure_schema)
 
-    backoff = 2
+    # Pelican rate-limits the client API. Start well back and cap high: a
+    # tight retry loop during an outage will trip a 429 and prolong it.
+    backoff = 15
     async with httpx.AsyncClient() as client:
         while True:
             try:
@@ -136,7 +146,8 @@ async def run() -> None:
                 ) as ws:
                     await ws.send(json.dumps({"event": "auth", "args": [token]}))
                     log.info("watcher connected to %s", socket)
-                    backoff = 2
+                    STATS["connected"] = True
+                    backoff = 15
 
                     async for message in ws:
                         try:
@@ -155,10 +166,12 @@ async def run() -> None:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:               # noqa: BLE001
+                STATS["connected"] = False
                 log.warning("watcher disconnected (%s); retrying in %ss", exc, backoff)
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60)
+                backoff = min(backoff * 2, 120)
 
 
 def snapshot() -> dict[str, Any]:
-    return {"identities": dict(IDENTITIES), "slots": {str(k): v for k, v in SLOTS.items()}}
+    return {**STATS, "identities": dict(IDENTITIES),
+            "slots": {str(k): v for k, v in SLOTS.items()}}
