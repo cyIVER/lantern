@@ -66,3 +66,66 @@ Base: **Metamod:Source** + **CounterStrikeSharp**
 2. **DHCP.** If the router reassigns this PC's IP, the panel URL and connect string
    change. A DHCP reservation for `192.168.0.115` is recommended.
 3. **Disk.** The move to E: must complete before pulling ~35 GB of CS2 files.
+
+---
+
+# Verification: Wings on Docker Desktop
+
+Pelican's docs say Wings does not run on Windows. That is true of the *binary*.
+Running Wings **as a container** against Docker Desktop is a different question,
+and it hinges on one property.
+
+## The property that had to hold
+
+Wings does not copy files into game containers. It tells the daemon *"bind-mount
+`/var/lib/pelican/volumes/<uuid>` into this container."* That only works if Wings
+and the daemon resolve that path to the **same real directory**.
+
+On native Linux this is trivial. On Docker Desktop the "host" is the `docker-desktop`
+LinuxKit VM, not Ubuntu — and `/var/lib/` exists in **both**, so a silent collision
+was plausible.
+
+## Tests run
+
+A bind test using `/home/iiverson/...` proves nothing: that path exists only in Ubuntu.
+And testing via the `docker` CLI *inside Ubuntu* also proves nothing, because Docker
+Desktop's WSL integration rewrites bind paths for the calling distro — Wings has no
+such wrapper; it speaks the raw socket from inside a container.
+
+The real test is **container → socket → daemon**, on a colliding path:
+
+| Test | Result | Conclusion |
+|---|---|---|
+| Socket-originated bind of `/tmp/pelican-probe` | Returned Ubuntu's file content | Resolves to Ubuntu |
+| Socket-originated bind of `/var/lib/docker` | 0 entries (VM's copy is populated) | Not the VM namespace |
+| `/var/lib/docker` in Ubuntu afterwards | **Auto-created by the daemon** | Daemon writes into Ubuntu |
+| Socket-originated bind of `/var/lib/containerd` | 0 entries | Not the VM namespace |
+| Socket-originated bind of `/` | `snap`, `lost+found`, `home`, `init` | That is the Ubuntu root |
+
+**Conclusion:** Docker Desktop's daemon treats the Ubuntu WSL filesystem as "the host"
+for bind mounts, including for socket-originated requests from inside a container.
+This is exactly what Wings requires. Re-verified after the storage move below.
+
+## Consequence for storage
+
+Wings volumes must therefore live in **Ubuntu's ext4 filesystem**. They cannot live on
+`/mnt/e`, because drvfs cannot honour the `chown` Wings performs on every volume
+directory. Ubuntu's vhdx was still on C:, so it was moved:
+
+```
+wsl --manage Ubuntu-26.04 --move E:\WSL\Ubuntu-26.04
+```
+
+Final layout — nothing game-related on C: any more:
+
+| Store | Location | Size |
+|---|---|---|
+| Docker data | `E:\DockerData\DockerDesktopWSL` | 70 GB |
+| Ubuntu WSL (holds `/var/lib/pelican`) | `E:\WSL\Ubuntu-26.04` | 13.8 GB, 945 GB free |
+
+## Operational notes
+
+- **Run `docker compose` from inside Ubuntu WSL**, not Git Bash. MSYS mangles Linux
+  paths (`/var/run/docker.sock` became `C:\Program Files\Git\var` during testing).
+- Bind-mount targets are auto-created by the daemon, so no `sudo mkdir` is needed
+  for `/var/lib/pelican` and friends.
