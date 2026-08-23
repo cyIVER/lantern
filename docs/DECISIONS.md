@@ -129,3 +129,78 @@ Final layout — nothing game-related on C: any more:
   paths (`/var/run/docker.sock` became `C:\Program Files\Git\var` during testing).
 - Bind-mount targets are auto-created by the daemon, so no `sudo mkdir` is needed
   for `/var/lib/pelican` and friends.
+
+---
+
+# Plugin archives can destroy the platform
+
+The single hardest failure of the build, worth understanding before adding any
+new plugin.
+
+## Symptom
+
+`!knife`, `!kick` and every other chat command silently do nothing. No error in
+game, no error in the panel. The server runs, players connect, rounds play.
+
+## Cause
+
+`boot.sh` activates a mode by overlaying a staged plugin set's whole tree onto
+`csgo/`. That is fine for a plugin that ships only its own files — but
+**CS2-Practice-Plugin ships the entire platform**:
+
+```
+practice/addons/metamod/                    <- a 2024 Metamod
+practice/addons/metamod.vdf
+practice/addons/counterstrikesharp/bin/     <- a 2024 CounterStrikeSharp
+practice/addons/counterstrikesharp/dotnet/
+practice/addons/counterstrikesharp/gamedata/gamedata.json   <- engine signatures
+practice/addons/counterstrikesharp/configs/core.example.json
+```
+
+Switching to practice overwrote all of it, in three escalating failures:
+
+| What was overwritten | Result |
+|---|---|
+| `addons/metamod/` | `MMS: Fatal error: Detected engine 26 but could not load: metamod.2.cs2.so: undefined symbol: UtlMemory_CalcNewAllocationCount` |
+| `counterstrikesharp/bin/` | `[META] Failed to load counterstrikesharp.so: undefined symbol: _ZN24CUtlMemoryBlockAllocator5PurgeEv` |
+| `gamedata/gamedata.json` | `CSSharp: Failed to find signature for 'Host_Say'` … then **segfault** |
+
+Metamod loads CounterStrikeSharp, which loads every plugin. Break the bottom of
+that stack and everything above it vanishes without a word.
+
+Deleting `addons/metamod` to reinstall has its own trap: **`counterstrikesharp.vdf`
+lives in there** and is not in the Metamod tarball. Lose it and CSSharp never
+loads even with a perfect Metamod.
+
+## Fix
+
+`normalize-plugins.sh` strips platform-owned paths at staging time, per file
+rather than per directory, because `gamedata/` and `configs/` are legitimately
+shared between platform and plugins:
+
+| Path | Verdict |
+|---|---|
+| `addons/metamod/`, `addons/metamod*.vdf` | always stripped |
+| `counterstrikesharp/{bin,dotnet,api,source}` | always stripped |
+| `counterstrikesharp/gamedata/gamedata.json`, `schema_*.txt` | stripped (platform) |
+| `counterstrikesharp/gamedata/<plugin>.json` | kept (WeaponPaints needs its own) |
+| `counterstrikesharp/configs/plugins/` | kept |
+| `counterstrikesharp/configs/*` (anything else) | stripped |
+| `counterstrikesharp/{plugins,shared,lang}` | kept |
+
+`repair-platform.sh` reinstalls Metamod and CSSharp when an install is already
+damaged, preserving any `.vdf` across the swap.
+
+## Practice mode is gone
+
+Even with a clean platform, CSPracc v1.0.0.3 segfaults on load against current
+CS2 — which is *why* it bundles a 2024 runtime: it requires that era. `practice`
+was removed from the MODE enum in the egg and the UI, and `boot.sh` falls back to
+competitive rather than boot-looping a crash.
+
+## Lesson for the test suite
+
+The original `test-modes.sh` asserted that plugin *directories* were staged. It
+passed cheerfully through all of this, while nothing was loading at all. It now
+asserts on CounterStrikeSharp's `Finished loading plugin` output. **Test the
+observable behaviour, not the arrangement of files you just arranged.**

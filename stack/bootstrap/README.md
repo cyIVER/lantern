@@ -8,6 +8,17 @@ Run them from inside Ubuntu WSL, from `stack/`.
 | `create-node.php` | Creates the `lantern` node (or reports the existing one) and prints its Wings config |
 | `install-wings-config.sh` | Regenerates the config from a fresh model and writes `/etc/pelican/config.yml` |
 | `allocations.php` | Creates the CS2 / CSTV / Minecraft port allocations |
+| `create-cs2-server.php` | Creates the CS2 server (triggers the ~66 GB download) |
+| `create-ui-credentials.php` | API key + RCON details for the control UI |
+| `push-boot-script.sh` | Update `boot.sh` on a live server without reinstalling |
+| `repair-platform.sh` | Reinstall Metamod + CounterStrikeSharp when plugins go silent |
+| `fetch-missing-plugin.sh` | Stage one plugin into an installed server |
+| `add-admin.sh` | Grant a SteamID64 server admin |
+| `test-modes.sh` | Assert each mode loads the right plugins |
+| `cs2-status.sh` | Install / runtime progress |
+| `rotate-rcon.php` | Rotate the RCON password |
+| `setup-weaponpaints-db.sh` | Scoped MySQL database for skins |
+| `lantern-startup.ps1` | Logon startup sequencer (WSL → Docker → stack) |
 
 ```bash
 cd /mnt/c/Users/iveri/Documents/code/lantern/stack
@@ -41,3 +52,9 @@ which looks exactly like a broken node. Clear it rather than debugging the netwo
 docker compose exec -T panel php artisan tinker \
   --execute='cache()->forget("nodes.1.system_information");'
 ```
+
+---
+
+See also: [USING.md](../../docs/USING.md) for day-to-day operation,
+[CONTROL-UI.md](../../docs/CONTROL-UI.md) for the CS2 panel, and
+[DECISIONS.md](../../docs/DECISIONS.md) for why things are shaped this way.

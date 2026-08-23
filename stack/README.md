@@ -126,3 +126,12 @@ Taken from `pelican/panel` `compose-full-stack.yml` and `pelican/wings`
 | 27015/udp + tcp | CS2 (once the server exists) |
 | 27020/udp | CSTV |
 | 25565 | Minecraft |
+
+---
+
+## Related
+
+- [../docs/USING.md](../docs/USING.md) — day-to-day operation
+- [../docs/CONTROL-UI.md](../docs/CONTROL-UI.md) — the CS2 control UI on :8090
+- [../docs/CONNECTING.md](../docs/CONNECTING.md) — how players join
+- [bootstrap/README.md](bootstrap/README.md) — the setup and repair scripts
