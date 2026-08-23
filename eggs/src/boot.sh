@@ -152,10 +152,10 @@ esac
 
 ARGS=(
     -dedicated
-    # Mirrors the console to game/csgo/console.log. The control UI tails that
-    # file for chat commands (loadout presets), which avoids handing the UI
-    # container the Docker socket just to read stdout.
-    -condebug
+    # NOTE: -condebug is deliberately NOT passed. CS2 ignores it (no console.log
+    # is ever produced) and it appears to suppress CounterStrikeSharp's stdout,
+    # which makes plugin loading impossible to observe. The control UI reads the
+    # console over Wings' websocket instead.
     -ip 0.0.0.0
     -port "${SERVER_PORT}"
     -maxplayers "${MAX_PLAYERS:-12}"
