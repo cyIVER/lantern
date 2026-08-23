@@ -71,6 +71,46 @@ for set_dir in */; do
         done
     fi
 
+    # 2a. Strip any Metamod the archive carries.
+    #
+    # CS2-Practice-Plugin ships a full addons/metamod plus its .vdf files. The
+    # overlay would copy that over the platform's Metamod, replacing a current
+    # build with whatever stale one the plugin was packaged against -- which
+    # produces, on the next boot:
+    #
+    #   MMS: Fatal error: Detected engine 26 but could not load:
+    #     metamod.2.cs2.so: undefined symbol: UtlMemory_CalcNewAllocationCount
+    #
+    # Metamod then never loads, so CounterStrikeSharp never loads, so every
+    # plugin silently does nothing. CSSharp plugins are loaded by CSSharp, not
+    # by Metamod, so none of them has any business shipping one.
+    if [ -e "$set_name/addons/metamod" ] || ls "$set_name/addons/"metamod*.vdf >/dev/null 2>&1; then
+        echo "      stripping bundled Metamod (would clobber the real one)"
+        rm -rf "$set_name/addons/metamod"
+        rm -f "$set_name/addons/"metamod*.vdf
+    fi
+
+    # Same problem one layer up: CS2-Practice-Plugin ships a complete
+    # CounterStrikeSharp distribution (bin/, dotnet/, api/, source/). Overlaying
+    # that replaces the live runtime with whatever it was packaged against:
+    #
+    #   [META] Failed to load counterstrikesharp.so:
+    #     undefined symbol: _ZN24CUtlMemoryBlockAllocator5PurgeEv
+    #
+    # A plugin set may only contribute plugins/, shared/, gamedata/, configs/
+    # and lang/. Everything else under addons/counterstrikesharp/ is platform.
+    css="$set_name/addons/counterstrikesharp"
+    if [ -d "$css" ]; then
+        for item in "$css"/*; do
+            [ -e "$item" ] || continue
+            case "$(basename "$item")" in
+                plugins|shared|gamedata|configs|lang) ;;
+                *) echo "      stripping platform dir: $(basename "$item")"
+                   rm -rf "$item" ;;
+            esac
+        done
+    fi
+
     # 2b. Drop loose files from plugins/. CSSharp only loads directories, but a
     # stray README.txt sitting there shows up in the "active plugins" line and
     # makes that diagnostic misleading.
