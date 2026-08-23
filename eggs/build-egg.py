@@ -19,18 +19,38 @@ OUT = HERE / "lantern-cs2.json"
 # Stable UUID so re-importing updates this egg instead of creating duplicates.
 LANTERN_UUID = "b5f4c1a2-7e63-4d18-9a2f-3c8d5e0b71aa"
 
+# Verified against game/csgo/maps/*.vpk in an actual install. '_vanity' variants
+# are menu backdrops, not playable, and are deliberately excluded.
+MAPS = [
+    # active duty
+    "de_ancient", "de_anubis", "de_dust2", "de_inferno", "de_mirage",
+    "de_nuke", "de_overpass", "de_train", "de_vertigo",
+    # LAN classics
+    "de_cache", "cs_italy", "cs_office", "cs_shelter",
+    # other official maps shipped with CS2
+    "de_boulder", "de_debris", "de_eldorado", "de_fachwerk", "de_poseidon",
+    "ar_baggage", "ar_shoots", "ar_pool_day",
+]
+
 
 def load_scripts() -> str:
     install = (HERE / "src" / "install.sh").read_text(encoding="utf-8")
-    boot = (HERE / "src" / "boot.sh").read_text(encoding="utf-8")
+    embeds = {
+        "__BOOT_SCRIPT__": ("boot.sh", "BOOTEOF"),
+        "__NORMALIZE_SCRIPT__": ("normalize-plugins.sh", "NORMEOF"),
+    }
 
-    if "__BOOT_SCRIPT__" not in install:
-        sys.exit("install.sh is missing the __BOOT_SCRIPT__ placeholder")
-    # boot.sh is embedded inside a quoted heredoc ('BOOTEOF'), so no shell
-    # expansion happens -- but a line that is exactly the delimiter would end it.
-    if any(line.strip() == "BOOTEOF" for line in boot.splitlines()):
-        sys.exit("boot.sh contains a line equal to the heredoc delimiter")
-    return install.replace("__BOOT_SCRIPT__", boot.rstrip("\n"))
+    for placeholder, (filename, delimiter) in embeds.items():
+        if placeholder not in install:
+            sys.exit(f"install.sh is missing the {placeholder} placeholder")
+        body = (HERE / "src" / filename).read_text(encoding="utf-8")
+        # Embedded inside a quoted heredoc, so nothing expands -- but a line
+        # equal to the delimiter would terminate it early.
+        if any(line.strip() == delimiter for line in body.splitlines()):
+            sys.exit(f"{filename} contains a line equal to its heredoc delimiter")
+        install = install.replace(placeholder, body.rstrip("\n"))
+
+    return install
 
 
 def variable(name, env, default, rules, desc, *, user_view=True, user_edit=True):
@@ -87,6 +107,16 @@ def main() -> int:
             v["description"] = (
                 "Game Server Login Token. Leave EMPTY for LAN play -- sv_lan 1 does "
                 "not need one. Only required to appear in the public server browser."
+            )
+        elif env == "SRCDS_MAP":
+            # An 'in:' rule renders as a dropdown in the panel instead of a
+            # free-text box. Every entry is verified present in the CS2 install
+            # (game/csgo/maps/*.vpk), so nothing here can fail to load.
+            v["rules"] = ["required", "string", "in:" + ",".join(MAPS)]
+            v["default_value"] = "de_dust2"
+            v["description"] = (
+                "Starting map. Active duty pool plus LAN classics. Change it here "
+                "and restart, or switch live from the console with 'changelevel <map>'."
             )
         elif env == "MAX_PLAYERS":
             v["default_value"] = "12"

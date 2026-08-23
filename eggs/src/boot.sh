@@ -53,34 +53,47 @@ else
 fi
 
 # ------------------------------------------------------ 2. activate plugin set
+# Sets are normalised at install time into csgo/-rooted overlays, each carrying
+# a .lantern-plugins manifest of the plugin directories it owns. Activation is
+# therefore: remove every plugin any set owns, then overlay the chosen sets.
 if [ -d "$STAGE" ]; then
-    # Always available regardless of mode.
-    SETS="simpleadmin"
+    # SimpleAdmin's dependency chain must load with it in every mode:
+    # CS2-SimpleAdmin -> MenuManagerCS2 -> PlayerSettingsCS2 -> AnyBaseLibCS2
+    SETS="anybaselib playersettings menumanager simpleadmin"
     [ "${ENABLE_SKINS:-0}" = "1" ] && SETS="$SETS weaponpaints"
 
     case "$MODE" in
         competitive) SETS="$SETS matchzy" ;;
         retakes)     SETS="$SETS retakes" ;;
         practice)    SETS="$SETS practice" ;;
-        deathmatch)  ;;                       # vanilla DM, admin only
+        deathmatch)  ;;                                   # vanilla DM, admin only
         *)           say "Unknown MODE '$MODE', falling back to competitive"
                      MODE=competitive; SETS="$SETS matchzy" ;;
     esac
 
     say "MODE=$MODE -> activating: $SETS"
-    rm -rf "$LIVE"; mkdir -p "$LIVE"
+    mkdir -p "$LIVE"
+
+    # Deactivate everything first. Removing only what the manifests claim means
+    # we never delete a plugin a user dropped in by hand.
+    for s in "$STAGE"/*/; do
+        m="${s}.lantern-plugins"
+        [ -f "$m" ] || continue
+        while IFS= read -r p; do
+            [ -n "$p" ] && rm -rf "${LIVE:?}/$p"
+        done < "$m"
+    done
+
     for s in $SETS; do
         if [ -d "$STAGE/$s" ]; then
-            cp -a "$STAGE/$s"/. "$LIVE"/ 2>/dev/null && say "  + $s"
+            cp -a "$STAGE/$s/." "$CSGO"/ 2>/dev/null && say "  + $s"
         else
             say "  ! $s not staged, skipping"
         fi
     done
-    # Some archives nest addons/counterstrikesharp/plugins/<Name>; flatten those.
-    if [ -d "$LIVE/addons/counterstrikesharp/plugins" ]; then
-        cp -a "$LIVE/addons/counterstrikesharp/plugins"/. "$LIVE"/ 2>/dev/null
-        rm -rf "$LIVE/addons"
-    fi
+    rm -f "$CSGO/.lantern-plugins"        # manifest is metadata, not game content
+
+    say "active plugins: $(ls -1 "$LIVE" 2>/dev/null | tr '\n' ' ')"
 else
     say "No staged plugins found -- running vanilla"
 fi
@@ -98,6 +111,11 @@ mkdir -p "$CFG"
     echo "bot_difficulty ${BOT_DIFFICULTY:-2}"
     echo "mp_autoteambalance 1"
     echo "mp_limitteams 2"
+    # Credentials go in the config, never on the command line: CounterStrikeSharp
+    # echoes the full argv at startup, which would print them into the container
+    # log and anything that reads it.
+    [ -n "${RCON_PASSWORD:-}" ]   && echo "rcon_password \"${RCON_PASSWORD}\""
+    [ -n "${SERVER_PASSWORD:-}" ] && echo "sv_password \"${SERVER_PASSWORD}\""
     case "$MODE" in
         competitive)
             echo "mp_maxrounds 24"; echo "mp_overtime_enable 1"
@@ -141,8 +159,8 @@ ARGS=(
 [ "${VAC_ENABLED:-0}" = "1" ] || ARGS+=(-insecure)
 [ "${RCON_ENABLED:-1}" = "0" ] || ARGS+=(-usercon)
 [ -n "${TV_PORT}" ]        && ARGS+=(-tv_port "${TV_PORT}")
-[ -n "${RCON_PASSWORD}" ]  && ARGS+=(+rcon_password "${RCON_PASSWORD}")
-[ -n "${SERVER_PASSWORD}" ] && ARGS+=(+sv_password "${SERVER_PASSWORD}")
+# rcon_password and sv_password are deliberately NOT passed here -- they are
+# written into lantern.cfg above so they never appear in argv or the log.
 # Only pass a GSLT if one is actually set; sv_lan 1 does not need one.
 [ -n "${STEAM_GSLT}" ]     && ARGS+=(+sv_setsteamaccount "${STEAM_GSLT}")
 

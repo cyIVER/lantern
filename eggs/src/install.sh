@@ -96,6 +96,14 @@ fetch_plugin() {
 
 #            repo                          asset regex                    staging dir
 fetch_plugin "shobhit-pathak/MatchZy"      '^MatchZy-[0-9.]+\.zip$'        matchzy
+
+# CS2-SimpleAdmin's core plugin will not load without this chain:
+#   CS2-SimpleAdmin -> MenuManagerCS2 -> PlayerSettingsCS2 -> AnyBaseLibCS2
+# Omit any of them and you get a FileNotFoundException for MenuManagerApi while
+# the submodules load fine, which makes it look like SimpleAdmin half-works.
+fetch_plugin "NickFox007/AnyBaseLibCS2"    '^AnyBaseLib\.zip$'             anybaselib
+fetch_plugin "NickFox007/PlayerSettingsCS2" '^PlayerSettings\.zip$'        playersettings
+fetch_plugin "NickFox007/MenuManagerCS2"   '^MenuManager\.zip$'            menumanager
 fetch_plugin "daffyyyy/CS2-SimpleAdmin"    '^CS2-SimpleAdmin.*\.zip$'      simpleadmin
 fetch_plugin "Nereziel/cs2-WeaponPaints"   '^WeaponPaints\.zip$'           weaponpaints
 fetch_plugin "CHR15cs/CS2-Practice-Plugin" '^Linux\.Release.*\.zip$'       practice
@@ -103,6 +111,14 @@ fetch_plugin "B3none/cs2-retakes"          '^RetakesPlugin-[0-9.]+\.zip$'  retak
 
 say "Staged plugin sets"
 ls -1 "$STAGE" 2>/dev/null | sed 's/^/  /'
+
+# Each project ships a differently-shaped archive. Normalise them all into
+# csgo/-rooted overlays so boot.sh can activate a set with a plain copy.
+say "Normalising plugin layouts"
+cat > /tmp/normalize-plugins.sh <<'NORMEOF'
+__NORMALIZE_SCRIPT__
+NORMEOF
+bash /tmp/normalize-plugins.sh "$STAGE"
 
 # ----------------------------------------------------------------- boot script
 # Written at install time, executed on every start. Lives outside addons/ so a
