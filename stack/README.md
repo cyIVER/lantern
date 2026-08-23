@@ -39,6 +39,41 @@ docker compose ps
    docker compose exec panel php artisan p:user:make
    ```
 
+   ### Installer gotcha: "Page expired" on Finish
+
+   The wizard uses `persistStepInQueryString()`. **If the page reloads mid-wizard,
+   you return to the same step with empty form data** -- and Filament only validates
+   the *current* step, so blank earlier-step values pass straight through to Finish.
+
+   `submit()` then runs in this order, and swallows failures via `catch (Halt)`:
+
+   ```
+   writeToEnvironment(APP_INSTALLED=true)   <- installer disables itself FIRST
+   runMigrations()
+   createAdminUser()                        <- dies here if user data is empty
+   writeToEnv('env_session')                <- never reached
+   installEggs()                            <- never reached
+   ```
+
+   Result: `APP_INSTALLED=true` with **no admin user and no eggs**, and the installer
+   refuses to run again. Symptom in the log:
+
+   ```
+   User::email(): Argument #1 ($value) must be of type string, null given
+   ```
+
+   Recover from the CLI rather than resetting the install:
+
+   ```bash
+   docker compose exec panel php artisan p:user:make        --email iveri@lantern.lan --username iveri --admin=1
+   ```
+
+   Then log in and import eggs from *Admin -> Eggs -> Import*.
+
+   Note `writeToEnv('env_session')` never running is harmless here: `SESSION_DRIVER`
+   is supplied by compose as a container env var, and `SESSION_SECURE_COOKIE` unset
+   defaults to false, which is what plain-HTTP needs anyway.
+
 2. **Create the Node** — in the panel, *Admin → Nodes → Create Node*:
 
    | Field | Value |
