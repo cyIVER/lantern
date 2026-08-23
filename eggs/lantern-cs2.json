@@ -1,0 +1,244 @@
+{
+  "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PANEL",
+  "meta": {
+    "version": "PLCN_v3",
+    "update_url": "https://raw.githubusercontent.com/pelican-eggs/games-steamcmd/refs/heads/main/counter_strike/counter_strike_2/egg-counter--strike2.yaml"
+  },
+  "exported_at": "2026-08-23T18:08:17+00:00",
+  "name": "LANtern CS2",
+  "author": "iveri@lantern.lan",
+  "uuid": "b5f4c1a2-7e63-4d18-9a2f-3c8d5e0b71aa",
+  "description": "Counter-Strike 2 for LAN play. Metamod + CounterStrikeSharp with a MODE switch (competitive / retakes / practice / deathmatch) that activates only the matching plugin set, because MatchZy, Retakes and PracticeMode conflict if loaded together. sv_lan 1, no GSLT required.",
+  "icon": "data:image/png;base64,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",
+  "tags": [
+    "steamcmd"
+  ],
+  "features": [
+    "steam_disk_space"
+  ],
+  "docker_images": {
+    "ghcr.io/parkervcp/steamcmd:sniper": "ghcr.io/parkervcp/steamcmd:sniper"
+  },
+  "file_denylist": [],
+  "startup_commands": {
+    "Default": "bash ./lantern/boot.sh"
+  },
+  "config": {
+    "files": "[]",
+    "startup": "{\"done\": \"Connection to Steam servers successful\"}",
+    "logs": "[]",
+    "stop": "quit"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\n# LANtern CS2 install script.\n#\n# Extends the stock Counter-Strike 2 egg (steamcmd base) with Metamod:Source,\n# CounterStrikeSharp and the LANtern plugin set. Plugins are staged into\n# plugins.available/ and the boot script activates only the ones the selected\n# MODE needs -- MatchZy, Retakes and PracticeMode each take over round flow and\n# break each other if loaded together.\n#\n# Server files: /mnt/server   (this becomes /home/container at runtime)\nset -o pipefail\n\nSRV=/mnt/server\nCSGO=\"$SRV/game/csgo\"\nADDONS=\"$CSGO/addons\"\nSTAGE=\"$ADDONS/counterstrikesharp/plugins.available\"\n\nsay() { echo -e \"\\n\\033[1m[LANtern] $*\\033[0m\"; }\n\n# ---------------------------------------------------------------- prerequisites\nsay \"Installing prerequisites\"\napt-get update -qq >/dev/null 2>&1\napt-get install -y -qq curl tar unzip jq ca-certificates >/dev/null 2>&1\ncommand -v unzip >/dev/null || { echo \"FATAL: unzip unavailable\"; exit 1; }\n\n# ------------------------------------------------------------------- base game\nif [[ \"${STEAM_USER}\" == \"\" ]] || [[ \"${STEAM_PASS}\" == \"\" ]]; then\n    say \"Using anonymous Steam login\"\n    STEAM_USER=anonymous; STEAM_PASS=\"\"; STEAM_AUTH=\"\"\nfi\n\nsay \"Installing steamcmd\"\ncd /tmp\nmkdir -p \"$SRV/steamcmd\" \"$SRV/steamapps\"\ncurl -sSL -o steamcmd.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz\ntar -xzf steamcmd.tar.gz -C \"$SRV/steamcmd\"\ncd \"$SRV/steamcmd\"\nchown -R root:root /mnt\nexport HOME=$SRV\n\nsay \"Downloading Counter-Strike 2 (app ${SRCDS_APPID:-730}) -- this is ~35 GB, be patient\"\n./steamcmd.sh +force_install_dir \"$SRV\" +login \"$STEAM_USER\" $STEAM_PASS $STEAM_AUTH \\\n    +app_update \"${SRCDS_APPID:-730}\" $EXTRA_FLAGS validate +quit\n\nif [ ! -f \"$CSGO/gameinfo.gi\" ]; then\n    echo \"FATAL: game files missing after steamcmd (no $CSGO/gameinfo.gi)\"; exit 1\nfi\n\nsay \"Setting up Steam client libraries\"\nmkdir -p \"$SRV/.steam/sdk32\" \"$SRV/.steam/sdk64\"\ncp -f linux32/steamclient.so \"$SRV/.steam/sdk32/steamclient.so\"\ncp -f linux64/steamclient.so \"$SRV/.steam/sdk64/steamclient.so\"\n\n# -------------------------------------------------------------- Metamod:Source\nsay \"Installing Metamod:Source\"\nMM_FILE=$(curl -sSL https://mms.alliedmods.net/mmsdrop/2.0/mmsource-latest-linux)\nif [ -z \"$MM_FILE\" ]; then echo \"FATAL: could not resolve Metamod latest build\"; exit 1; fi\necho \"  build: $MM_FILE\"\ncurl -sSL -o /tmp/mm.tar.gz \"https://mms.alliedmods.net/mmsdrop/2.0/${MM_FILE}\"\nmkdir -p \"$ADDONS\"\ntar -xzf /tmp/mm.tar.gz -C \"$CSGO\"      # tarball already contains addons/metamod\n[ -d \"$ADDONS/metamod\" ] || { echo \"FATAL: metamod did not extract\"; exit 1; }\n\n# --------------------------------------------------------- CounterStrikeSharp\n# 'with-runtime' bundles .NET -- the steamcmd runtime image has none, and the\n# plain build fails to load with no useful error.\nsay \"Installing CounterStrikeSharp (with .NET runtime)\"\nCSS_URL=$(curl -sSL https://api.github.com/repos/roflmuffin/CounterStrikeSharp/releases/latest \\\n  | jq -r '.assets[] | select(.name | test(\"with-runtime-linux\")) | .browser_download_url' | head -1)\nif [ -z \"$CSS_URL\" ]; then echo \"FATAL: could not resolve CounterStrikeSharp release\"; exit 1; fi\necho \"  $CSS_URL\"\ncurl -sSL -o /tmp/css.zip \"$CSS_URL\"\nunzip -oq /tmp/css.zip -d \"$CSGO\"        # contains addons/counterstrikesharp + metamod vdf\n[ -d \"$ADDONS/counterstrikesharp\" ] || { echo \"FATAL: CounterStrikeSharp did not extract\"; exit 1; }\n\n# ------------------------------------------------------------------- plugins\nmkdir -p \"$STAGE\"\n\n# Fetch a GitHub release asset matching a regex, unzip into a staging subdir.\nfetch_plugin() {\n    local repo=\"$1\" pattern=\"$2\" dest=\"$3\"\n    say \"Installing $repo\"\n    local url\n    url=$(curl -sSL \"https://api.github.com/repos/${repo}/releases/latest\" \\\n          | jq -r --arg p \"$pattern\" '.assets[] | select(.name | test($p)) | .browser_download_url' | head -1)\n    if [ -z \"$url\" ]; then\n        echo \"  WARNING: no asset matching /$pattern/ for $repo -- skipping\"\n        return 0\n    fi\n    echo \"  $url\"\n    curl -sSL -o /tmp/p.zip \"$url\" || { echo \"  WARNING: download failed\"; return 0; }\n    mkdir -p \"$STAGE/$dest\"\n    unzip -oq /tmp/p.zip -d \"$STAGE/$dest\" || { echo \"  WARNING: unzip failed\"; return 0; }\n    rm -f /tmp/p.zip\n}\n\n#            repo                          asset regex                    staging dir\nfetch_plugin \"shobhit-pathak/MatchZy\"      '^MatchZy-[0-9.]+\\.zip$'        matchzy\nfetch_plugin \"daffyyyy/CS2-SimpleAdmin\"    '^CS2-SimpleAdmin.*\\.zip$'      simpleadmin\nfetch_plugin \"Nereziel/cs2-WeaponPaints\"   '^WeaponPaints\\.zip$'           weaponpaints\nfetch_plugin \"CHR15cs/CS2-Practice-Plugin\" '^Linux\\.Release.*\\.zip$'       practice\nfetch_plugin \"B3none/cs2-retakes\"          '^RetakesPlugin-[0-9.]+\\.zip$'  retakes\n\nsay \"Staged plugin sets\"\nls -1 \"$STAGE\" 2>/dev/null | sed 's/^/  /'\n\n# ----------------------------------------------------------------- boot script\n# Written at install time, executed on every start. Lives outside addons/ so a\n# steamcmd 'validate' cannot remove it.\nsay \"Installing LANtern boot script\"\nmkdir -p \"$SRV/lantern\"\ncat > \"$SRV/lantern/boot.sh\" <<'BOOTEOF'\n#!/bin/bash\n# LANtern CS2 boot script. Runs on every server start.\n#\n# Three jobs:\n#   1. Re-apply the Metamod patch to gameinfo.gi. steamcmd 'validate' REVERTS\n#      this file on every update, which silently breaks all plugins -- so it\n#      must be re-applied at boot, not just at install.\n#   2. Activate only the plugin set the selected MODE needs. MatchZy, Retakes\n#      and PracticeMode each hook round flow and produce broken rounds if two\n#      are loaded at once.\n#   3. Write the mode config and exec the server.\n\nset -o pipefail\ncd /home/container || exit 1\n\nCSGO=/home/container/game/csgo\nADDONS=\"$CSGO/addons\"\nCSS=\"$ADDONS/counterstrikesharp\"\nSTAGE=\"$CSS/plugins.available\"\nLIVE=\"$CSS/plugins\"\nCFG=\"$CSGO/cfg\"\n\nMODE=\"${MODE:-competitive}\"\nsay() { echo \"[LANtern] $*\"; }\n\n# ---------------------------------------------------- 1. gameinfo.gi (Metamod)\n# Without 'Game csgo/addons/metamod' in SearchPaths, Metamod never loads and\n# every plugin silently does nothing. Idempotent.\nGAMEINFO=\"$CSGO/gameinfo.gi\"\nif [ -f \"$GAMEINFO\" ]; then\n    if grep -q \"csgo/addons/metamod\" \"$GAMEINFO\"; then\n        say \"gameinfo.gi already patched for Metamod\"\n    else\n        say \"Patching gameinfo.gi for Metamod (reverted by the last CS2 update)\"\n        cp \"$GAMEINFO\" \"$GAMEINFO.lantern.bak\"\n        awk '\n            /Game_LowViolence/ && !done {\n                match($0, /^[ \\t]*/)\n                print substr($0, 1, RLENGTH) \"Game\\tcsgo/addons/metamod\"\n                done = 1\n            }\n            { print }\n        ' \"$GAMEINFO.lantern.bak\" > \"$GAMEINFO\"\n        if grep -q \"csgo/addons/metamod\" \"$GAMEINFO\"; then\n            say \"  patched\"\n        else\n            say \"  WARNING: patch failed, restoring original -- plugins will not load\"\n            cp \"$GAMEINFO.lantern.bak\" \"$GAMEINFO\"\n        fi\n    fi\nelse\n    say \"WARNING: $GAMEINFO not found\"\nfi\n\n# ------------------------------------------------------ 2. activate plugin set\nif [ -d \"$STAGE\" ]; then\n    # Always available regardless of mode.\n    SETS=\"simpleadmin\"\n    [ \"${ENABLE_SKINS:-0}\" = \"1\" ] && SETS=\"$SETS weaponpaints\"\n\n    case \"$MODE\" in\n        competitive) SETS=\"$SETS matchzy\" ;;\n        retakes)     SETS=\"$SETS retakes\" ;;\n        practice)    SETS=\"$SETS practice\" ;;\n        deathmatch)  ;;                       # vanilla DM, admin only\n        *)           say \"Unknown MODE '$MODE', falling back to competitive\"\n                     MODE=competitive; SETS=\"$SETS matchzy\" ;;\n    esac\n\n    say \"MODE=$MODE -> activating: $SETS\"\n    rm -rf \"$LIVE\"; mkdir -p \"$LIVE\"\n    for s in $SETS; do\n        if [ -d \"$STAGE/$s\" ]; then\n            cp -a \"$STAGE/$s\"/. \"$LIVE\"/ 2>/dev/null && say \"  + $s\"\n        else\n            say \"  ! $s not staged, skipping\"\n        fi\n    done\n    # Some archives nest addons/counterstrikesharp/plugins/<Name>; flatten those.\n    if [ -d \"$LIVE/addons/counterstrikesharp/plugins\" ]; then\n        cp -a \"$LIVE/addons/counterstrikesharp/plugins\"/. \"$LIVE\"/ 2>/dev/null\n        rm -rf \"$LIVE/addons\"\n    fi\nelse\n    say \"No staged plugins found -- running vanilla\"\nfi\n\n# --------------------------------------------------------- 3. mode config file\nmkdir -p \"$CFG\"\n{\n    echo \"// Generated by LANtern on every boot. Do not edit -- edit the egg.\"\n    echo \"sv_lan 1\"\n    echo \"sv_cheats 0\"\n    echo \"hostname \\\"${SERVER_NAME:-LANtern CS2}\\\"\"\n    echo \"sv_hibernate_when_empty 0\"\n    echo \"bot_quota_mode fill\"\n    echo \"bot_quota ${BOT_QUOTA:-10}\"\n    echo \"bot_difficulty ${BOT_DIFFICULTY:-2}\"\n    echo \"mp_autoteambalance 1\"\n    echo \"mp_limitteams 2\"\n    case \"$MODE\" in\n        competitive)\n            echo \"mp_maxrounds 24\"; echo \"mp_overtime_enable 1\"\n            echo \"mp_warmuptime 60\"; echo \"mp_freezetime 15\"\n            echo \"tv_enable 1\"; echo \"tv_autorecord 1\"; echo \"tv_delay 30\"\n            ;;\n        retakes)\n            echo \"mp_maxrounds 0\"; echo \"mp_freezetime 3\"; echo \"mp_warmuptime 10\"\n            echo \"tv_enable 0\"\n            ;;\n        practice)\n            echo \"sv_cheats 1\"; echo \"mp_limitteams 0\"; echo \"mp_autoteambalance 0\"\n            echo \"mp_maxmoney 65535\"; echo \"mp_startmoney 65535\"\n            echo \"mp_buytime 60000\"; echo \"mp_buy_anywhere 1\"\n            echo \"mp_roundtime 60\"; echo \"mp_freezetime 0\"; echo \"sv_infinite_ammo 1\"\n            echo \"bot_quota 0\"; echo \"tv_enable 0\"\n            ;;\n        deathmatch)\n            echo \"mp_maxrounds 0\"; echo \"mp_freezetime 0\"; echo \"tv_enable 0\"\n            ;;\n    esac\n} > \"$CFG/lantern.cfg\"\nsay \"Wrote $CFG/lantern.cfg\"\n\n# ------------------------------------------------------------------ 4. launch\ncase \"$MODE\" in\n    deathmatch) GT=1; GM=2 ;;\n    *)          GT=0; GM=1 ;;\nesac\n\nARGS=(\n    -dedicated\n    -ip 0.0.0.0\n    -port \"${SERVER_PORT}\"\n    -maxplayers \"${MAX_PLAYERS:-12}\"\n    +game_type \"$GT\"\n    +game_mode \"$GM\"\n    +map \"${SRCDS_MAP:-de_dust2}\"\n    +exec lantern.cfg\n)\n[ \"${VAC_ENABLED:-0}\" = \"1\" ] || ARGS+=(-insecure)\n[ \"${RCON_ENABLED:-1}\" = \"0\" ] || ARGS+=(-usercon)\n[ -n \"${TV_PORT}\" ]        && ARGS+=(-tv_port \"${TV_PORT}\")\n[ -n \"${RCON_PASSWORD}\" ]  && ARGS+=(+rcon_password \"${RCON_PASSWORD}\")\n[ -n \"${SERVER_PASSWORD}\" ] && ARGS+=(+sv_password \"${SERVER_PASSWORD}\")\n# Only pass a GSLT if one is actually set; sv_lan 1 does not need one.\n[ -n \"${STEAM_GSLT}\" ]     && ARGS+=(+sv_setsteamaccount \"${STEAM_GSLT}\")\n\nsay \"Launching CS2 (mode=$MODE, game_type=$GT, game_mode=$GM, port=${SERVER_PORT})\"\nexport LD_LIBRARY_PATH=\"/home/container/game/bin/linuxsteamrt64:$LD_LIBRARY_PATH\"\nexec ./game/bin/linuxsteamrt64/cs2 \"${ARGS[@]}\"\nBOOTEOF\nchmod +x \"$SRV/lantern/boot.sh\"\n\nsay \"Installation complete\"\n",
+      "container": "ghcr.io/parkervcp/installers:debian",
+      "entrypoint": "/bin/bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Mode",
+      "description": "Which game mode to boot into. Changing this needs a restart. competitive = MatchZy 5v5 (knife round, .ready, MR12, demos). retakes = CS2-Retakes. practice = nade lineups, sv_cheats, infinite ammo. deathmatch = vanilla DM. Only the matching plugin set is loaded.",
+      "env_variable": "MODE",
+      "default_value": "competitive",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "string",
+        "in:competitive,retakes,practice,deathmatch"
+      ],
+      "sort": 1
+    },
+    {
+      "sort": 2,
+      "name": "Auto-update server",
+      "description": "This is to enable / disable auto-updating your server on restart.\r\n\r\nBy default this is set to enabled.",
+      "env_variable": "AUTO_UPDATE",
+      "default_value": "1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "boolean"
+      ]
+    },
+    {
+      "sort": 3,
+      "name": "Enable RCON",
+      "description": "Enable / Disable RCON for using RCON commands with external tools. By default this will be disabled.",
+      "env_variable": "RCON_ENABLED",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "boolean"
+      ]
+    },
+    {
+      "sort": 4,
+      "name": "Enable VAC",
+      "description": "Enable / Disable VAC (Valve Anti Cheat) on your server. By default this will be enabled.",
+      "env_variable": "VAC_ENABLED",
+      "default_value": "1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "boolean"
+      ]
+    },
+    {
+      "sort": 5,
+      "name": "Map",
+      "description": "The default map for the server.\r\nExamples:\r\n\r\nBomb:\r\nde_dust2, de_mirage, de_nuke, de_overpass, de_inferno, de_ancient, de_vertigo, de_anubis\r\n\r\nHostage:\r\ncs_italy, cs_office\r\n\r\nArms Race:\r\nar_baggage, ar_shoots",
+      "env_variable": "SRCDS_MAP",
+      "default_value": "de_dust2",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "string"
+      ]
+    },
+    {
+      "sort": 6,
+      "name": "Max Players",
+      "description": "Specifies the maximum amount of players that are able to join the server.",
+      "env_variable": "MAX_PLAYERS",
+      "default_value": "12",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "numeric",
+        "between:1,64"
+      ]
+    },
+    {
+      "sort": 7,
+      "name": "RCON Password",
+      "description": "To gain access to administrator commands on the server.",
+      "env_variable": "RCON_PASSWORD",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "alpha_dash",
+        "between:1,30"
+      ]
+    },
+    {
+      "sort": 8,
+      "name": "Server Name",
+      "description": "Sets the server name listed in the steam server browser.",
+      "env_variable": "SERVER_NAME",
+      "default_value": "LANtern",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "string",
+        "max:64"
+      ]
+    },
+    {
+      "sort": 9,
+      "name": "Server Password",
+      "description": "If specified, players must provide this password to join the server.",
+      "env_variable": "SERVER_PASSWORD",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "nullable",
+        "alpha_dash",
+        "between:1,30"
+      ]
+    },
+    {
+      "sort": 10,
+      "name": "Source AppID",
+      "description": "Required for game to update on server restart. Do not modify this.",
+      "env_variable": "SRCDS_APPID",
+      "default_value": "730",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": [
+        "required",
+        "string",
+        "in:730"
+      ]
+    },
+    {
+      "sort": 11,
+      "name": "SourceTV Port",
+      "description": "SourceTV port used for connections to spectates games on your server.",
+      "env_variable": "TV_PORT",
+      "default_value": "27020",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": [
+        "required",
+        "integer",
+        "between:1025,65535"
+      ]
+    },
+    {
+      "sort": 12,
+      "name": "Steam Gameserver Login Token",
+      "description": "Game Server Login Token. Leave EMPTY for LAN play -- sv_lan 1 does not need one. Only required to appear in the public server browser.",
+      "env_variable": "STEAM_GSLT",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "nullable",
+        "string",
+        "alpha_num",
+        "size:32"
+      ]
+    },
+    {
+      "name": "Enable weapon skins",
+      "description": "Load WeaponPaints so everyone can pick knives, gloves and skins. Requires a MySQL database configured for the plugin -- leave 0 until you have created one, or the plugin will error on load.",
+      "env_variable": "ENABLE_SKINS",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "boolean"
+      ],
+      "sort": 13
+    },
+    {
+      "name": "Bot quota",
+      "description": "Bots fill empty slots up to this number (bot_quota_mode fill). They are kicked automatically as humans join.",
+      "env_variable": "BOT_QUOTA",
+      "default_value": "10",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "numeric",
+        "between:0,32"
+      ],
+      "sort": 14
+    },
+    {
+      "name": "Bot difficulty",
+      "description": "0 = easy, 1 = normal, 2 = hard, 3 = expert.",
+      "env_variable": "BOT_DIFFICULTY",
+      "default_value": "2",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "numeric",
+        "between:0,3"
+      ],
+      "sort": 15
+    }
+  ]
+}
