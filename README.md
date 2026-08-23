@@ -12,11 +12,12 @@ Named for a beacon on the LAN.
 |---|---|
 | Design decisions | ✅ Recorded in [docs/DECISIONS.md](docs/DECISIONS.md) |
 | Docker storage on E: | ✅ Migrated (65 GB reclaimed from C:) |
+| **How to use it** | 📖 [docs/USING.md](docs/USING.md) |
 | Router MCP server | ✅ Built — 9 read-only tools + 1 gated write — [docs/ROUTER-MCP.md](docs/ROUTER-MCP.md) |
 | Host addressing | ✅ static `192.168.0.115` on Ethernet 5 (see [incident](docs/ROUTER-MCP.md)) |
-| Pelican Panel + Wings stack | ⬜ Next |
-| CS2 egg with `MODE` variable | ⬜ Pending |
-| Plugin bootstrap | ⬜ Pending |
+| Pelican Panel + Wings stack | ✅ Running, autostarts on logon |
+| CS2 egg with `MODE` variable | ✅ 4 modes, all verified |
+| Plugin bootstrap | ✅ 7 plugins, zero load errors |
 | Minecraft (Paper) | ⬜ Pending |
 
 ## Layout
