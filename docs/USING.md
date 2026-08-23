@@ -76,16 +76,23 @@ Demos record automatically to `game/csgo/replays/`, reachable from the Files tab
 **Weapon skins** — `!ws` opens the skin menu, `!knife` the knife menu, `!gloves`
 for gloves. Choices persist per Steam ID in the `cs2_weaponpaints` database.
 
-## Granting yourself admin
+## Admins
 
-SimpleAdmin ships with no admins, so `!` commands do nothing until your SteamID64
-is registered. Find yours at steamid.io, then either use the Files tab to edit
+`cyIVER` (`76561199322943569`) is registered with `@css/root` and immunity 100,
+so every `!` command works.
 
+Add someone else:
+
+```bash
+bash stack/bootstrap/add-admin.sh <steamid64> "<name>" [immunity]
 ```
-game/csgo/addons/counterstrikesharp/configs/plugins/CS2-SimpleAdmin/
-```
 
-or run `bash stack/bootstrap/add-admin.sh <steamid64> <name>`.
+It merges into `addons/counterstrikesharp/configs/admins.json` rather than
+overwriting, validates the SteamID64 shape, and preserves file ownership.
+Apply with a restart or `css_reladmin` in the console.
+
+SimpleAdmin keeps bans and mutes in SQLite (`cs2-simpleadmin.sqlite`), so it
+needs no database of its own.
 
 ## Other panel tabs
 
