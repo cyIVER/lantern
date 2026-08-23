@@ -7,6 +7,16 @@ Panel + Wings + MariaDB + Redis on Docker Desktop (WSL2 backend).
 **Run from inside Ubuntu WSL, not Git Bash.** MSYS rewrites Linux paths and will
 mangle the docker socket mount.
 
+This can fail *silently*. `docker compose up -d --build ui` from Git Bash brings
+the container up looking healthy, but its `/var/lib/pelican/volumes` bind
+resolves into the wrong namespace and mounts an empty directory -- so the skin
+catalogue reads as zero items and the Loadout grids render blank, with no error
+anywhere. If the UI suddenly has no knives or skins, check this first:
+
+```bash
+docker exec stack-ui-1 ls /volumes   # must list the server UUID, not nothing
+```
+
 ```bash
 cd /mnt/c/Users/iveri/Documents/code/lantern/stack
 

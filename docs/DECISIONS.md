@@ -127,6 +127,9 @@ Final layout — nothing game-related on C: any more:
 
 - **Run `docker compose` from inside Ubuntu WSL**, not Git Bash. MSYS mangles Linux
   paths (`/var/run/docker.sock` became `C:\Program Files\Git\var` during testing).
+  Sometimes it does so without erroring: a `ui` container recreated from Git Bash
+  came up healthy with an *empty* `/volumes`, silently emptying the skin
+  catalogue. Verify with `docker exec stack-ui-1 ls /volumes`.
 - Bind-mount targets are auto-created by the daemon, so no `sudo mkdir` is needed
   for `/var/lib/pelican` and friends.
 

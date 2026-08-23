@@ -133,7 +133,42 @@ def parse_status_text(text: str) -> list[dict[str, Any]]:
     return rows
 
 
-def merge_roster(json_text: str, status_text: str) -> dict[str, Any]:
+# CS2 will not hand out a SteamID for a player it never authenticated: under
+# sv_lan the engine skips Steam auth, so status_json reports steamid64 "0" and
+# the text table has no SteamID column at all. CS2-SimpleAdmin's css_players
+# does know, and answers over RCON:
+#
+#   • [#3] "cyIVER" (IP Address: "172.23.0.1" SteamID64: "76561199322943569")
+#
+# This is a *pull*, so unlike the console watcher it cannot go stale: the
+# watcher only learns an id when a player event happens to fly past, which means
+# a UI restart leaves everyone already connected anonymous until they reconnect.
+CSS_PLAYER_RE = re.compile(
+    r'\[#(?P<slot>\d+)\]\s+"(?P<name>[^"]*)".*?SteamID64:\s*"(?P<sid>\d+)"')
+
+
+async def resolve_identities() -> dict[int, str]:
+    """Ask CS2-SimpleAdmin who is connected. Returns slot -> steamid64."""
+    try:
+        out = await rcon.execute(RCON_HOST, RCON_PORT, RCON_PASSWORD, "css_players")
+    except rcon.RconError:
+        return {}
+    found: dict[int, str] = {}
+    for m in CSS_PLAYER_RE.finditer(out):
+        sid = m.group("sid")
+        if sid == "0" or len(sid) != 17:
+            continue
+        slot = int(m.group("slot"))
+        found[slot] = sid
+        # Seed the watcher too, so chat presets work for a player who has not
+        # said anything since the UI last restarted.
+        watcher.SLOTS[slot] = sid
+        watcher.IDENTITIES[m.group("name")] = sid
+    return found
+
+
+def merge_roster(json_text: str, status_text: str,
+                 extra: dict[int, str] | None = None) -> dict[str, Any]:
     info = parse_status_json(json_text)
     by_name = {c.get("name"): c for c in info.get("clients", []) if c.get("name")}
 
@@ -142,9 +177,12 @@ def merge_roster(json_text: str, status_text: str) -> dict[str, Any]:
         c = by_name.get(row["name"], {})
         sid = c.get("steamid64")
         if sid in ("0", 0, None):
-            # status_json leaves this blank for many clients; the console stream
-            # carries the canonical id, so fall back to what the watcher saw.
-            sid = watcher.IDENTITIES.get(row["name"]) or watcher.SLOTS.get(row["slot"])
+            # status_json leaves this blank for most clients on a LAN server.
+            # Prefer the authoritative css_players lookup, then whatever the
+            # console watcher happened to see.
+            sid = ((extra or {}).get(row["slot"])
+                   or watcher.IDENTITIES.get(row["name"])
+                   or watcher.SLOTS.get(row["slot"]))
         players.append({
             "slot": row["slot"],
             "name": row["name"],
@@ -252,7 +290,13 @@ async def players() -> dict[str, Any]:
         tx = await rcon.execute(RCON_HOST, RCON_PORT, RCON_PASSWORD, "status")
     except rcon.RconError as exc:
         return {"players": [], "error": str(exc)}
-    return merge_roster(js, tx)
+    roster = merge_roster(js, tx)
+    # Only pay for the extra round-trip when something actually needs it.
+    if any(not p["bot"] and not p["identified"] for p in roster["players"]):
+        extra = await resolve_identities()
+        if extra:
+            roster = merge_roster(js, tx, extra)
+    return roster
 
 
 @app.post("/api/command")
