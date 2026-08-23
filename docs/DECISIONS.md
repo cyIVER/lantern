@@ -1,0 +1,68 @@
+# LANtern — Decision Record
+
+Captured from the design interview. Every row is a resolved branch.
+
+## Platform
+
+| Decision | Choice | Why |
+|---|---|---|
+| Game | **CS2** (Steam app **730**) | Installed game is Counter-Strike 2, not CS:GO. CS:GO's dedicated server is no longer distributed by Valve. |
+| App ID | **730**, not 740 | CS2 merged client + dedicated server into one app ID. 740 was CS:GO-only. |
+| Runtime | **Docker** (Docker Desktop, WSL2 backend) | Keeps the server fully isolated from the Steam client on the same PC, and allows anonymous steamcmd downloads. |
+| Storage | **Move Docker disk image to E:** | `docker_data.vhdx` is already 65 GB and C: has only 15.8 GB free. E: has 752 GB. Also gives native ext4 speed vs. a slow virtiofs bind mount. |
+| Panel | **Pelican Panel + Wings, both containerised** | Wings does not run on Windows, but runs fine as a container driving Docker Desktop via the socket. Avoids the drvfs `chown` problem that breaks Wings on `/mnt/e`. |
+
+### Evidence gathered
+
+- Docker Desktop's daemon **can** bind-mount Ubuntu WSL paths (verified empirically).
+- Ubuntu 26.04 WSL already runs **systemd**, cgroups are **v2**.
+- WSL is in **NAT** mode; Ubuntu is at `172.26.12.36` and is not LAN-reachable.
+  Not a problem: Docker Desktop publishes container ports on the Windows host.
+- Ports 80, 443, 8080, 8443, 2022, 3306, 25565, 27015, 27020 are all **free**.
+- Host: i5-13600KF, 14C/20T, 32 GB RAM. Ample to game and host at once.
+
+## CS2 server
+
+| Decision | Choice |
+|---|---|
+| Audience | **Same LAN only** → clean `sv_lan 1`, no GSLT needed |
+| Slots | **12**, `bot_quota_mode fill` so teams stay even |
+| Mode switching | **One server, `MODE` startup variable** in the egg (competitive / retakes / practice / dm), selectable in the panel UI |
+| Maps | Active duty + fan favourites (all official, no download friction) |
+| CSTV | **On**, UDP 27020 — spectators don't consume player slots |
+| Demos | **On**, auto-recorded per match by MatchZy |
+| Updates | **Validate/update on every start** — a version mismatch hard-blocks clients |
+| Connect | `connect 192.168.0.115:27015` — WSL2 NAT blocks LAN broadcast discovery, so no server-browser entry |
+
+### Plugin stack
+
+Base: **Metamod:Source** + **CounterStrikeSharp**
+
+| Plugin | Purpose | Active in mode |
+|---|---|---|
+| MatchZy | Knife round, `.ready`, MR12, pauses, backups, demos | competitive |
+| CS2-SimpleAdmin | kick/ban/mute/slay/swap/map | all |
+| WeaponPaints | Knives, gloves, skins for everyone (needs MySQL) | all |
+| cs2-practicemode | Nade lineups, `.rethrow`, bot placement | practice |
+| CS2-Retakes | Retake rounds | retakes |
+
+> **Constraint:** MatchZy, Retakes and PracticeMode each take over round flow and
+> conflict if loaded together. The `MODE` variable enables exactly one set per boot.
+
+## Other
+
+| Decision | Choice |
+|---|---|
+| Minecraft | **Paper**, latest, via Pelican's egg |
+| Panel URL | `http://192.168.0.115` (port 80, plain HTTP, LAN-only) |
+| Panel auth | Admin (you) + **limited subusers** for trusted friends |
+| Autostart | **Panel stack only** (`restart: unless-stopped`); game servers started on demand from the UI |
+| Secrets | Generated into a git-ignored `.env` |
+
+## Known risks
+
+1. **Pelican Wings on Docker Desktop is an unsupported configuration.** The blocking
+   issues are solved, but this needs end-to-end verification before a LAN party.
+2. **DHCP.** If the router reassigns this PC's IP, the panel URL and connect string
+   change. A DHCP reservation for `192.168.0.115` is recommended.
+3. **Disk.** The move to E: must complete before pulling ~35 GB of CS2 files.
