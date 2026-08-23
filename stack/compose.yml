@@ -103,7 +103,10 @@ networks:
   default:
     ipam:
       config:
-        - subnet: 172.20.0.0/16
+        # LANTERN: upstream uses 172.20.0.0/16, which collides with the
+        # existing memory-system_default network on this host. 172.26.x is
+        # also taken by the WSL Hyper-V vSwitch.
+        - subnet: 172.22.0.0/16
   wings0:
     name: wings0
     driver: bridge
