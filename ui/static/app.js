@@ -82,19 +82,24 @@ async function pollState() {
 function playerRow(p) {
   const tr = document.createElement('tr');
   const sid = p.steamid64 || '';
-  // Bots carry synthetic 9007... ids that no admin command accepts, so they only
-  // get a kick (issued by name via bot_kick).
+  // Players without a validated SteamID (sv_lan skips Steam auth) can still be
+  // kicked/slayed/swapped by slot, but not banned or muted -- those need to
+  // outlive the session.
   const acts = p.bot
     ? `<button class="btn tiny stop" data-act="kick">Kick Bot</button>`
     : `<button class="btn tiny" data-act="swap">Swap</button>
        <button class="btn tiny warn" data-act="slay">Slay</button>
-       <button class="btn tiny warn" data-act="mute">Mute</button>
+       <button class="btn tiny warn" data-act="mute" ${p.identified ? '' : 'disabled title="needs a SteamID"'}>Mute</button>
        <button class="btn tiny stop" data-act="kick">Kick</button>
-       <button class="btn tiny kill" data-act="ban">Ban</button>`;
+       <button class="btn tiny kill" data-act="ban" ${p.identified ? '' : 'disabled title="needs a SteamID"'}>Ban</button>`;
+  const idCell = p.bot
+    ? '<span style="color:#5d6b7c">—</span>'
+    : (sid || '<span style="color:#d99b2b" title="sv_lan skips Steam auth">no SteamID</span>');
   tr.innerHTML = `
-    <td>${p.bot ? '<span class="tag bot">BOT</span>' : '<span class="tag human">P</span>'}</td>
+    <td>${p.bot ? '<span class="tag bot">BOT</span>' : '<span class="tag human">P</span>'}
+        <span class="sub" style="color:#5d6b7c">#${p.slot}</span></td>
     <td>${escapeHtml(p.name)}</td>
-    <td class="sid">${p.bot ? '<span style="color:#5d6b7c">—</span>' : sid}</td>
+    <td class="sid">${idCell}</td>
     <td class="right"><span class="rowacts">${acts}</span></td>`;
   tr.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
     const action = b.dataset.act;
@@ -106,7 +111,8 @@ function playerRow(p) {
     } else if (action === 'kick' && !confirm(`Kick ${p.name}?`)) return;
     try {
       const r = await api('/api/player', {
-        body: { steamid64: sid || null, name: p.name, bot: !!p.bot, action, duration },
+        body: { steamid64: sid || null, slot: p.slot, name: p.name,
+                bot: !!p.bot, action, duration },
       });
       toast(`${action} → ${p.name}`);
       if (r.output) appendOutput(r.output);
@@ -302,6 +308,7 @@ function imgTag(src, alt) {
 async function loRefreshPlayers() {
   try {
     const d = await api('/api/players');
+    // A loadout is keyed on SteamID, so unauthenticated players cannot have one.
     const humans = (d.players || []).filter((p) => !p.bot && p.steamid64);
     const sel = $('#lo-player');
     const prev = sel.value;
@@ -339,12 +346,48 @@ async function loBuildKnives() {
     const el = document.createElement('div');
     el.className = 'item';
     el.dataset.weapon = k.weapon_name;
-    el.innerHTML = `${imgTag(k.image, k.label)}<div class="nm">${escapeHtml(k.label)}</div>`;
-    el.onclick = () => loApply('/api/loadout/knife',
-      { steamid64: loSteamId(), weapon_name: k.weapon_name }, k.label);
+    el.innerHTML = `${imgTag(k.image, k.label)}
+      <div class="nm">${escapeHtml(k.label)}</div>
+      <div class="sub">pick a finish →</div>`;
+    // Two steps: choose the model, then its finish. A knife needs both the
+    // model row and a paint row, so applying the model alone gives vanilla.
+    el.onclick = () => loBuildKnifeFinishes(k);
     return el;
   }));
   markLoCurrent();
+}
+
+async function loBuildKnifeFinishes(knife) {
+  const grid = $('#grid-knife');
+  const paints = await api(`/api/loadout/catalog/skins/${knife.weapon_name}`);
+
+  const back = document.createElement('div');
+  back.className = 'item';
+  back.style.borderColor = 'var(--gold)';
+  back.innerHTML = `<div style="height:72px;display:flex;align-items:center;
+                     justify-content:center;font-size:26px;color:var(--gold)">←</div>
+                    <div class="nm">All knives</div>
+                    <div class="sub">${escapeHtml(knife.label)}</div>`;
+  back.onclick = loBuildKnives;
+
+  grid.replaceChildren(back, ...paints.map((pt) => {
+    const el = document.createElement('div');
+    el.className = 'item';
+    // Doppler and similar share a name across several paint ids (the phases),
+    // so show the id to tell them apart.
+    const short = (pt.paint_name || '').split('|').slice(1).join('|').trim()
+                  || pt.paint_name || 'Default';
+    el.innerHTML = `${imgTag(pt.image, pt.paint_name)}
+      <div class="nm">${escapeHtml(short)}</div>
+      <div class="sub">paint ${pt.paint}</div>`;
+    el.onclick = () => loApply('/api/loadout/knife', {
+      steamid64: loSteamId(),
+      weapon_name: knife.weapon_name,
+      weapon_defindex: pt.weapon_defindex ?? knife.weapon_defindex,
+      paint: pt.paint,
+    }, `${knife.label} | ${short}`);
+    return el;
+  }));
 }
 
 async function loBuildGloves() {

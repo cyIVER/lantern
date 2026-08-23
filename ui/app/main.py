@@ -11,6 +11,8 @@ Both paths act on the same server, so the panel and this UI stay in sync.
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import os
 import re
@@ -23,7 +25,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import loadout, rcon
+from . import loadout, presets, rcon, watcher
 
 STATIC = pathlib.Path(__file__).parent.parent / "static"
 
@@ -43,7 +45,20 @@ MODE_BLURB = {
     "deathmatch":  "Vanilla DM",
 }
 
-app = FastAPI(title="LANtern CS2 Control", docs_url=None, redoc_url=None)
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # The console watcher resolves SteamIDs and handles !1..!9 preset commands.
+    task = asyncio.create_task(watcher.run())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+app = FastAPI(title="LANtern CS2 Control", docs_url=None, redoc_url=None,
+              lifespan=lifespan)
 
 
 # --------------------------------------------------------------- Pelican API
@@ -75,26 +90,79 @@ def parse_status_json(text: str) -> dict[str, Any]:
     except (json.JSONDecodeError, TypeError):
         return {}
     srv = doc.get("server", {}) or {}
-    players = []
-    for c in srv.get("clients", []) or []:
-        # Slots mid-connect report steamid64 "0" and a blank name; they are not
-        # real clients and flicker in and out of the list.
-        if not c.get("name") or str(c.get("steamid64")) in ("0", "None"):
-            continue
-        players.append({
-            "name": c.get("name", "?"),
-            "steamid64": c.get("steamid64"),
-            "steamid": c.get("steamid"),
-            "bot": bool(c.get("bot")),
-        })
     return {
-        "players": players,
+        "clients": srv.get("clients", []) or [],
         "map": srv.get("map"),
         "humans": srv.get("clients_human", 0),
         "bots": srv.get("clients_bot", 0),
         "hibernating": srv.get("hibernating", False),
         "server_cpu": round(srv.get("cpu_usage", 0) * 100, 1),
         "mem_avail_gb": round(doc.get("mem_phys_avail_gb", 0), 2),
+    }
+
+
+# The text table is the authority on WHO is connected, because status_json
+# reports players without a validated SteamID as name "" / steamid64 0 -- which
+# is every player when sv_lan 1 skips Steam auth, e.g. anyone reaching the
+# server through the Docker bridge. Rows look like:
+#
+#      3    03:17    1    0     active 786432 172.23.0.1:42167 'cyIVER'
+#      0      BOT    0    0     active      0 'SourceTV'
+#  65535 [NoChan]    0    0 challenging      0unknown ''        <- a real ghost
+#
+# Anchor on the leading slot id and the trailing quoted name; the middle columns
+# run together (`0unknown`) and shift between CS2 versions.
+STATUS_ROW = re.compile(r"^\s*(?P<slot>\d+)\s+(?P<time>\S+)\s+.*?'(?P<name>[^']*)'\s*$", re.M)
+
+
+def parse_status_text(text: str) -> list[dict[str, Any]]:
+    block = text
+    start = text.find("---------players")
+    if start >= 0:
+        end = text.find("#end", start)
+        block = text[start:end if end > 0 else None]
+
+    rows = []
+    for m in STATUS_ROW.finditer(block):
+        slot = int(m.group("slot"))
+        name = m.group("name")
+        # 65535 is the placeholder slot for a connection still challenging.
+        if slot == 65535 or not name:
+            continue
+        rows.append({"slot": slot, "name": name, "bot": m.group("time") == "BOT"})
+    return rows
+
+
+def merge_roster(json_text: str, status_text: str) -> dict[str, Any]:
+    info = parse_status_json(json_text)
+    by_name = {c.get("name"): c for c in info.get("clients", []) if c.get("name")}
+
+    players = []
+    for row in parse_status_text(status_text):
+        c = by_name.get(row["name"], {})
+        sid = c.get("steamid64")
+        if sid in ("0", 0, None):
+            # status_json leaves this blank for many clients; the console stream
+            # carries the canonical id, so fall back to what the watcher saw.
+            sid = watcher.IDENTITIES.get(row["name"]) or watcher.SLOTS.get(row["slot"])
+        players.append({
+            "slot": row["slot"],
+            "name": row["name"],
+            "bot": row["bot"] or bool(c.get("bot")),
+            "steamid64": sid,
+            # Without a SteamID we can still act by slot, but not ban or set a
+            # loadout -- both are keyed on the SteamID.
+            "identified": sid is not None,
+        })
+
+    return {
+        "players": players,
+        "map": info.get("map"),
+        "humans": info.get("humans", 0),
+        "bots": info.get("bots", 0),
+        "hibernating": info.get("hibernating", False),
+        "server_cpu": info.get("server_cpu", 0),
+        "mem_avail_gb": info.get("mem_avail_gb", 0),
     }
 
 
@@ -118,6 +186,7 @@ class ModeBody(BaseModel):
 
 class PlayerAction(BaseModel):
     steamid64: str | None = None
+    slot: int | None = None
     name: str | None = None
     bot: bool = False
     action: str
@@ -179,13 +248,11 @@ async def config() -> dict[str, Any]:
 @app.get("/api/players")
 async def players() -> dict[str, Any]:
     try:
-        text = await rcon.execute(RCON_HOST, RCON_PORT, RCON_PASSWORD, "status_json")
+        js = await rcon.execute(RCON_HOST, RCON_PORT, RCON_PASSWORD, "status_json")
+        tx = await rcon.execute(RCON_HOST, RCON_PORT, RCON_PASSWORD, "status")
     except rcon.RconError as exc:
         return {"players": [], "error": str(exc)}
-    data = parse_status_json(text)
-    if not data:
-        return {"players": [], "error": "could not parse status_json"}
-    return data
+    return merge_roster(js, tx)
 
 
 @app.post("/api/command")
@@ -255,20 +322,30 @@ async def player_action(body: PlayerAction) -> dict[str, Any]:
         if body.action != "kick":
             raise HTTPException(400, "bots only support kick")
         cmd = f'bot_kick "{name}"'
-    elif body.action == "kick":
-        cmd = f'css_kick {sid} "{reason}"'
-    elif body.action == "ban":
-        cmd = f'css_addban {sid} {body.duration} "{reason}"'
-    elif body.action == "mute":
-        cmd = f'css_addgag {sid} {body.duration} "{reason}"'
-    elif body.action == "unmute":
-        cmd = f"css_ungag {sid}"
-    elif body.action == "slay":
-        cmd = f"css_slay {sid}"
-    elif body.action == "swap":
-        cmd = f"css_swap {sid}"
     else:
-        raise HTTPException(400, f"unknown action {body.action}")
+        # Prefer the SteamID; fall back to #slot for players sv_lan left
+        # unauthenticated. Ban and mute are SteamID-only -- they must outlive
+        # the session, and a slot number does not.
+        target = sid or (f"#{body.slot}" if body.slot is not None else None)
+        if not target:
+            raise HTTPException(400, "no SteamID or slot to target")
+
+        if body.action == "kick":
+            cmd = f'css_kick {target} "{reason}"'
+        elif body.action == "slay":
+            cmd = f"css_slay {target}"
+        elif body.action == "swap":
+            cmd = f"css_swap {target}"
+        elif body.action in ("ban", "mute", "unmute"):
+            if not sid:
+                raise HTTPException(
+                    400, f"{body.action} needs a SteamID, and this player has none "
+                         "(sv_lan skips Steam auth). Kick or slay them instead.")
+            cmd = {"ban": f'css_addban {sid} {body.duration} "{reason}"',
+                   "mute": f'css_addgag {sid} {body.duration} "{reason}"',
+                   "unmute": f"css_ungag {sid}"}[body.action]
+        else:
+            raise HTTPException(400, f"unknown action {body.action}")
 
     try:
         out = await rcon.execute(RCON_HOST, RCON_PORT, RCON_PASSWORD, cmd)
@@ -301,6 +378,10 @@ async def match(action: str) -> dict[str, Any]:
 class KnifeBody(BaseModel):
     steamid64: str
     weapon_name: str
+    # Optional finish. A knife needs BOTH rows: the model in wp_player_knife and
+    # its paint in wp_player_skins. Setting only the model gives the vanilla one.
+    weapon_defindex: int | None = None
+    paint: int | None = None
 
 
 class GloveBody(BaseModel):
@@ -360,8 +441,14 @@ async def loadout_current(steamid64: str) -> dict[str, Any]:
 async def loadout_knife(body: KnifeBody) -> dict[str, Any]:
     if not re.fullmatch(r"weapon_[a-z0-9_]+", body.weapon_name):
         raise HTTPException(400, "bad weapon name")
-    loadout.set_knife(_valid_steamid(body.steamid64), body.weapon_name)
-    return {"ok": True, "knife": body.weapon_name, "note": "respawn to see it (!kill)"}
+    sid = _valid_steamid(body.steamid64)
+    loadout.set_knife(sid, body.weapon_name)
+    finish = None
+    if body.paint is not None and body.weapon_defindex:
+        loadout.set_skin(sid, body.weapon_defindex, body.paint)
+        finish = body.paint
+    return {"ok": True, "knife": body.weapon_name, "paint": finish,
+            "note": "respawn to see it (!kill)"}
 
 
 @app.post("/api/loadout/gloves")
@@ -380,6 +467,40 @@ async def loadout_skin(body: SkinBody) -> dict[str, Any]:
 @app.delete("/api/loadout/{steamid64}")
 async def loadout_clear(steamid64: str) -> dict[str, Any]:
     return {"ok": True, "removed": loadout.clear(_valid_steamid(steamid64))}
+
+
+# -------------------------------------------------------------------- presets
+class PresetBody(BaseModel):
+    steamid64: str
+    slot: int
+    name: str = ""
+
+
+@app.get("/api/presets/{steamid64}")
+async def presets_list(steamid64: str) -> list[dict[str, Any]]:
+    return presets.list_for(_valid_steamid(steamid64))
+
+
+@app.post("/api/presets")
+async def presets_save(body: PresetBody) -> dict[str, Any]:
+    if not 1 <= body.slot <= 9:
+        raise HTTPException(400, "slot must be 1-9")
+    return presets.capture(_valid_steamid(body.steamid64), body.slot, body.name)
+
+
+@app.post("/api/presets/apply")
+async def presets_apply(body: PresetBody) -> dict[str, Any]:
+    return presets.apply(_valid_steamid(body.steamid64), body.slot)
+
+
+@app.delete("/api/presets/{steamid64}/{slot}")
+async def presets_delete(steamid64: str, slot: int) -> dict[str, Any]:
+    return {"ok": True, "removed": presets.delete(_valid_steamid(steamid64), slot)}
+
+
+@app.get("/api/watcher")
+async def watcher_state() -> dict[str, Any]:
+    return watcher.snapshot()
 
 
 @app.get("/")

@@ -152,6 +152,10 @@ esac
 
 ARGS=(
     -dedicated
+    # Mirrors the console to game/csgo/console.log. The control UI tails that
+    # file for chat commands (loadout presets), which avoids handing the UI
+    # container the Docker socket just to read stdout.
+    -condebug
     -ip 0.0.0.0
     -port "${SERVER_PORT}"
     -maxplayers "${MAX_PLAYERS:-12}"
