@@ -105,6 +105,11 @@ services:
       - "8090:8090"
     env_file:
       - ../ui/.env
+    volumes:
+      # Read-only: the UI reads WeaponPaints' bundled item catalogues
+      # (skins_en.json etc.) straight from the server's plugin directory, so the
+      # skin list always matches the plugin version actually installed.
+      - /var/lib/pelican/volumes:/volumes:ro
     depends_on:
       - panel
     extra_hosts:

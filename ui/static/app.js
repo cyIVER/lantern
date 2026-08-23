@@ -279,3 +279,156 @@ async function loadConfig() {
   setInterval(pollState, 4000);
   setInterval(pollPlayers, 4000);
 })();
+
+/* ------------------------------------------------------------------ loadout
+   Writes go straight into WeaponPaints' tables. The catalogue comes from the
+   plugin's own bundled JSON, so it always matches the installed version.
+   Item images are hosted on GitHub; they degrade to a placeholder offline. */
+
+let LO = { knives: null, gloves: null, weapons: null, current: null };
+
+function loSteamId() {
+  const typed = $('#lo-steamid').value.trim();
+  if (typed) return typed;
+  return $('#lo-player').value || '';
+}
+
+function imgTag(src, alt) {
+  if (!src) return '<div style="height:72px;background:#0b0e12;margin-bottom:6px"></div>';
+  return `<img src="${src}" alt="${escapeHtml(alt)}" loading="lazy"
+           onerror="this.style.visibility='hidden'">`;
+}
+
+async function loRefreshPlayers() {
+  try {
+    const d = await api('/api/players');
+    const humans = (d.players || []).filter((p) => !p.bot && p.steamid64);
+    const sel = $('#lo-player');
+    const prev = sel.value;
+    sel.replaceChildren(...[
+      new Option('— pick a connected player —', ''),
+      ...humans.map((p) => new Option(`${p.name} (${p.steamid64})`, p.steamid64)),
+    ]);
+    if (prev) sel.value = prev;
+  } catch { /* roster unavailable; the manual SteamID box still works */ }
+}
+
+async function loLoadCurrent() {
+  const sid = loSteamId();
+  const el = $('#lo-current');
+  if (!sid) { el.textContent = 'Pick a player, or paste a SteamID64.'; LO.current = null; return; }
+  try {
+    LO.current = await api(`/api/loadout/${sid}`);
+    const n = Object.keys(LO.current.skins || {}).length;
+    el.textContent = `Knife: ${LO.current.knife || 'default'} · Gloves: ${LO.current.gloves || 'default'} · ${n} weapon skin(s) set`;
+  } catch (e) { el.textContent = e.message; LO.current = null; }
+  markLoCurrent();
+}
+
+function markLoCurrent() {
+  const cur = LO.current || {};
+  $$('#grid-knife .item').forEach((c) =>
+    c.classList.toggle('current', c.dataset.weapon === cur.knife));
+  $$('#grid-gloves .item').forEach((c) =>
+    c.classList.toggle('current', Number(c.dataset.defindex) === Number(cur.gloves)));
+}
+
+async function loBuildKnives() {
+  LO.knives = LO.knives || await api('/api/loadout/catalog/knives');
+  $('#grid-knife').replaceChildren(...LO.knives.map((k) => {
+    const el = document.createElement('div');
+    el.className = 'item';
+    el.dataset.weapon = k.weapon_name;
+    el.innerHTML = `${imgTag(k.image, k.label)}<div class="nm">${escapeHtml(k.label)}</div>`;
+    el.onclick = () => loApply('/api/loadout/knife',
+      { steamid64: loSteamId(), weapon_name: k.weapon_name }, k.label);
+    return el;
+  }));
+  markLoCurrent();
+}
+
+async function loBuildGloves() {
+  LO.gloves = LO.gloves || await api('/api/loadout/catalog/gloves');
+  $('#grid-gloves').replaceChildren(...LO.gloves.map((g) => {
+    const el = document.createElement('div');
+    el.className = 'item';
+    el.dataset.defindex = g.weapon_defindex;
+    el.innerHTML = `${imgTag(g.image, g.paint_name)}<div class="nm">${escapeHtml(g.paint_name)}</div>`;
+    el.onclick = () => loApply('/api/loadout/gloves',
+      { steamid64: loSteamId(), weapon_defindex: g.weapon_defindex, paint: g.paint },
+      g.paint_name);
+    return el;
+  }));
+  markLoCurrent();
+}
+
+async function loBuildWeapons() {
+  LO.weapons = LO.weapons || await api('/api/loadout/catalog/weapons');
+  const sel = $('#lo-weapon');
+  sel.replaceChildren(...LO.weapons.map((w) => new Option(w.label, w.weapon_name)));
+  sel.onchange = loBuildSkins;
+  await loBuildSkins();
+}
+
+async function loBuildSkins() {
+  const weapon = $('#lo-weapon').value;
+  if (!weapon) return;
+  const skins = await api(`/api/loadout/catalog/skins/${weapon}`);
+  $('#grid-skins').replaceChildren(...skins.map((s) => {
+    const el = document.createElement('div');
+    el.className = 'item';
+    const short = (s.paint_name || '').split('|').slice(1).join('|').trim() || s.paint_name;
+    el.innerHTML = `${imgTag(s.image, s.paint_name)}
+      <div class="nm">${escapeHtml(short)}</div>
+      <div class="sub">paint ${s.paint}</div>`;
+    el.onclick = () => loApply('/api/loadout/skin',
+      { steamid64: loSteamId(), weapon_defindex: s.weapon_defindex, paint: s.paint },
+      s.paint_name);
+    return el;
+  }));
+}
+
+async function loApply(path, body, label) {
+  if (!body.steamid64) return toast('Pick a player first.', true);
+  try {
+    const r = await api(path, { body });
+    toast(`${label} set — ${r.note || 'done'}`);
+    loLoadCurrent();
+  } catch (e) { toast(e.message, true); }
+}
+
+$$('.subtab').forEach((b) => b.addEventListener('click', async () => {
+  $$('.subtab').forEach((x) => x.classList.remove('active'));
+  $$('.lopanel').forEach((x) => x.classList.remove('active'));
+  b.classList.add('active');
+  $('#lo-' + b.dataset.lo).classList.add('active');
+  if (b.dataset.lo === 'knife')  await loBuildKnives();
+  if (b.dataset.lo === 'gloves') await loBuildGloves();
+  if (b.dataset.lo === 'skins')  await loBuildWeapons();
+}));
+
+$('#lo-player').addEventListener('change', () => { $('#lo-steamid').value = ''; loLoadCurrent(); });
+$('#lo-steamid').addEventListener('change', loLoadCurrent);
+
+$('#lo-clear').addEventListener('click', async () => {
+  const sid = loSteamId();
+  if (!sid) return toast('Pick a player first.', true);
+  if (!confirm(`Clear the entire loadout for ${sid}?`)) return;
+  try {
+    await api(`/api/loadout/${sid}`, { method: 'DELETE' });
+    toast('Loadout cleared.');
+    loLoadCurrent();
+  } catch (e) { toast(e.message, true); }
+});
+
+// Populate the tab the first time it is opened, and keep the roster fresh.
+document.querySelector('[data-tab="loadout"]').addEventListener('click', async () => {
+  await loRefreshPlayers();
+  await loBuildKnives();
+  loLoadCurrent();
+});
+setInterval(() => {
+  if (document.querySelector('[data-tab="loadout"]').classList.contains('active')) {
+    loRefreshPlayers();
+  }
+}, 8000);

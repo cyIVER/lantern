@@ -112,6 +112,15 @@ same things with buttons, and shows SteamID64s.
 Knives and gloves only appear on respawn — pick, then `!kill` or wait a round.
 Choices persist per SteamID in the `cs2_weaponpaints` database.
 
+**Menus are chat menus**: type the number of the option you want. (They shipped
+as *button* menus — navigated with W/S and selected with E — which is why they
+looked unresponsive if you tried typing a number. Changed via
+`stack/bootstrap/configure-menus.sh`.)
+
+**Or skip the in-game menu entirely**: the control UI's **Loadout** tab assigns
+knives, gloves and weapon skins to any player from the browser. See
+[CONTROL-UI.md](CONTROL-UI.md).
+
 ## Admins
 
 `cyIVER` (`76561199322943569`) is registered with `@css/root` and immunity 100,

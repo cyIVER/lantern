@@ -39,6 +39,7 @@
   <button class="tab active" data-tab="players">Players</button>
   <button class="tab" data-tab="maps">Maps</button>
   <button class="tab" data-tab="mode">Game Mode</button>
+  <button class="tab" data-tab="loadout">Loadout</button>
   <button class="tab" data-tab="match">Match</button>
   <button class="tab" data-tab="console">Console</button>
 </nav>
@@ -93,6 +94,38 @@
 
     <div class="panel-head"><h2>Options</h2></div>
     <div class="toggles" id="toggles"></div>
+  </section>
+
+  <!-- ------------------------------------------------------------ LOADOUT -->
+  <section id="tab-loadout" class="panel">
+    <div class="panel-head">
+      <h2>Loadout</h2>
+      <span class="hint">writes straight to WeaponPaints — respawn with <code>!kill</code> to see it</span>
+    </div>
+
+    <div class="picker">
+      <label>Player</label>
+      <select id="lo-player"></select>
+      <input id="lo-steamid" placeholder="or paste a SteamID64" maxlength="17" autocomplete="off">
+      <button class="btn" id="lo-clear">Clear loadout</button>
+    </div>
+    <p class="note" id="lo-current">—</p>
+
+    <div class="subtabs">
+      <button class="subtab active" data-lo="knife">Knives</button>
+      <button class="subtab" data-lo="gloves">Gloves</button>
+      <button class="subtab" data-lo="skins">Weapon skins</button>
+    </div>
+
+    <div id="lo-knife" class="lopanel active"><div class="items" id="grid-knife"></div></div>
+    <div id="lo-gloves" class="lopanel"><div class="items" id="grid-gloves"></div></div>
+    <div id="lo-skins" class="lopanel">
+      <div class="picker">
+        <label>Weapon</label>
+        <select id="lo-weapon"></select>
+      </div>
+      <div class="items" id="grid-skins"></div>
+    </div>
   </section>
 
   <!-- -------------------------------------------------------------- MATCH -->

@@ -5,7 +5,7 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /srv
 RUN pip install --no-cache-dir \
-      "fastapi>=0.110" "uvicorn[standard]>=0.29" "httpx>=0.27" "pydantic>=2"
+      "fastapi>=0.110" "uvicorn[standard]>=0.29" "httpx>=0.27" "pydantic>=2" "pymysql>=1.1"
 
 COPY app/    /srv/app/
 COPY static/ /srv/static/

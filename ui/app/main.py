@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import rcon
+from . import loadout, rcon
 
 STATIC = pathlib.Path(__file__).parent.parent / "static"
 
@@ -295,6 +295,91 @@ async def match(action: str) -> dict[str, Any]:
         return {"ok": True, "output": out}
     except rcon.RconError as exc:
         raise HTTPException(503, str(exc)) from exc
+
+
+# ------------------------------------------------------------------- loadout
+class KnifeBody(BaseModel):
+    steamid64: str
+    weapon_name: str
+
+
+class GloveBody(BaseModel):
+    steamid64: str
+    weapon_defindex: int
+    paint: int
+
+
+class SkinBody(BaseModel):
+    steamid64: str
+    weapon_defindex: int
+    paint: int
+    wear: float = 0.0
+    seed: int = 0
+    stattrak: bool = False
+
+
+def _valid_steamid(sid: str) -> str:
+    if not (sid.isdigit() and len(sid) == 17 and sid.startswith("7656119")):
+        raise HTTPException(400, f"not a SteamID64: {sid!r}")
+    return sid
+
+
+@app.get("/api/loadout/health")
+async def loadout_health() -> dict[str, Any]:
+    return loadout.health()
+
+
+@app.get("/api/loadout/catalog/knives")
+async def catalog_knives() -> list[dict[str, Any]]:
+    return loadout.knives()
+
+
+@app.get("/api/loadout/catalog/gloves")
+async def catalog_gloves() -> list[dict[str, Any]]:
+    return loadout.gloves()
+
+
+@app.get("/api/loadout/catalog/weapons")
+async def catalog_weapons() -> list[dict[str, Any]]:
+    return loadout.weapons()
+
+
+@app.get("/api/loadout/catalog/skins/{weapon_name}")
+async def catalog_skins(weapon_name: str) -> list[dict[str, Any]]:
+    if not re.fullmatch(r"weapon_[a-z0-9_]+", weapon_name):
+        raise HTTPException(400, "bad weapon name")
+    return loadout.skins_for(weapon_name)
+
+
+@app.get("/api/loadout/{steamid64}")
+async def loadout_current(steamid64: str) -> dict[str, Any]:
+    return loadout.current(_valid_steamid(steamid64))
+
+
+@app.post("/api/loadout/knife")
+async def loadout_knife(body: KnifeBody) -> dict[str, Any]:
+    if not re.fullmatch(r"weapon_[a-z0-9_]+", body.weapon_name):
+        raise HTTPException(400, "bad weapon name")
+    loadout.set_knife(_valid_steamid(body.steamid64), body.weapon_name)
+    return {"ok": True, "knife": body.weapon_name, "note": "respawn to see it (!kill)"}
+
+
+@app.post("/api/loadout/gloves")
+async def loadout_gloves(body: GloveBody) -> dict[str, Any]:
+    loadout.set_gloves(_valid_steamid(body.steamid64), body.weapon_defindex, body.paint)
+    return {"ok": True, "note": "respawn to see it (!kill)"}
+
+
+@app.post("/api/loadout/skin")
+async def loadout_skin(body: SkinBody) -> dict[str, Any]:
+    loadout.set_skin(_valid_steamid(body.steamid64), body.weapon_defindex,
+                     body.paint, body.wear, body.seed, body.stattrak)
+    return {"ok": True, "note": "respawn or re-buy to see it"}
+
+
+@app.delete("/api/loadout/{steamid64}")
+async def loadout_clear(steamid64: str) -> dict[str, Any]:
+    return {"ok": True, "removed": loadout.clear(_valid_steamid(steamid64))}
 
 
 @app.get("/")

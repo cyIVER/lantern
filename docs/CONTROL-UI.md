@@ -16,6 +16,7 @@ creating new servers. This does not replace it; it sits on top of it.
 | **Players** | Live roster with SteamID64s. Kick / ban / mute / slay / swap per player. Bots are flagged and only offer kick. |
 | **Maps** | All 21 maps as cards with the **real in-game icons**. One click issues `changelevel`; the "also set as boot map" toggle persists it. |
 | **Game Mode** | competitive / retakes / deathmatch, plus bot quota and difficulty sliders and the skins/VAC/auto-update toggles. |
+| **Loadout** | Pick knives, gloves and weapon skins for any player and write them straight into WeaponPaints. |
 | **Match** | MatchZy: start, knife round, pause, unpause, warmup, restart round. |
 | **Console** | RCON. Unlike Pelican's console, it **shows you the reply**. |
 
@@ -65,6 +66,33 @@ UI kicks them by name with `bot_kick` instead.
 
 ---
 
+## Loadout editor
+
+Assign a knife, gloves or a weapon skin to any player from the browser, instead
+of making them navigate an in-game menu.
+
+The catalogue comes from **WeaponPaints' own bundled JSON** (`skins_en.json`,
+`gloves_en.json`), read read-only from the server volume — 2067 skins and 95
+gloves. Because it is the plugin's own data, the list always matches the version
+actually installed; there is no second item database to drift.
+
+Writes go directly into the plugin's tables, for **both teams** so a choice
+applies whichever side the player ends up on:
+
+| Choice | Rows written |
+|---|---|
+| Knife | `wp_player_knife` (entity name, e.g. `weapon_knife_karambit`) |
+| Gloves | `wp_player_gloves` (model) **and** `wp_player_skins` (its paint) |
+| Weapon skin | `wp_player_skins` (defindex + paint id) |
+
+Changes apply **on respawn** — `!kill`, or wait for the next round.
+
+Item images are hosted on GitHub, so the grid needs internet to show pictures.
+Everything still works offline; the tiles just render without art.
+
+> Only SteamID64s are accepted, and only 17-digit `7656119…` values. Bots carry
+> synthetic `9007…` ids and are filtered out of the player picker.
+
 ## Map icons
 
 Real Valve art, extracted from your own install — no external dependency, works
@@ -101,6 +129,12 @@ Useful if you want to script against it or add a tab.
 | `PUT` | `/api/variable` | `{key, value}` — any egg variable |
 | `POST` | `/api/player` | `{steamid64, name, bot, action, duration}` |
 | `POST` | `/api/match/{action}` | start / knife / pause / unpause / warmup / restart |
+| `GET` | `/api/loadout/health` | catalogue counts + DB reachability |
+| `GET` | `/api/loadout/catalog/knives` \| `/gloves` \| `/weapons` | item lists |
+| `GET` | `/api/loadout/catalog/skins/{weapon_name}` | paints for one weapon |
+| `GET` | `/api/loadout/{steamid64}` | that player's current selections |
+| `POST` | `/api/loadout/knife` \| `/gloves` \| `/skin` | assign |
+| `DELETE` | `/api/loadout/{steamid64}` | wipe their loadout |
 
 ```bash
 curl -s http://192.168.0.115:8090/api/players | python -m json.tool
