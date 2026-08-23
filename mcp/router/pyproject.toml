@@ -1,0 +1,13 @@
+[project]
+name = "lantern-router-mcp"
+version = "0.1.0"
+description = "Read-only MCP control surface for a TP-Link router on the LANtern LAN"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "tplinkrouterc6u>=5.0.0",
+    "keyring>=25.0.0",
+]
+
+[tool.uv]
+package = false

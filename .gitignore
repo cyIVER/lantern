@@ -14,3 +14,8 @@ logs/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.pyc
