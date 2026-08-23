@@ -87,6 +87,27 @@ def knife_paints(weapon_name: str) -> list[dict[str, Any]]:
     ]
 
 
+# Grouping for the arsenal view. WeaponPaints only *paints* a weapon you
+# legitimately obtain -- assigning a skin never gives you the gun -- so a full
+# arsenal can be set up before a match without affecting competitive play.
+CATEGORIES: dict[str, tuple[str, ...]] = {
+    "Pistols": ("glock", "hkp2000", "usp_silencer", "p250", "fiveseven", "tec9",
+                "cz75a", "deagle", "revolver", "elite"),
+    "SMGs": ("mac10", "mp9", "mp7", "mp5sd", "ump45", "p90", "bizon"),
+    "Rifles": ("galilar", "famas", "ak47", "m4a1", "m4a1_silencer", "sg556", "aug"),
+    "Snipers": ("ssg08", "awp", "scar20", "g3sg1"),
+    "Heavy": ("nova", "xm1014", "sawedoff", "mag7", "m249", "negev"),
+}
+
+
+def _category(weapon_name: str) -> str:
+    short = weapon_name.replace("weapon_", "")
+    for cat, members in CATEGORIES.items():
+        if short in members:
+            return cat
+    return "Other"
+
+
 def weapons() -> list[dict[str, Any]]:
     """Non-knife weapons that have at least one skin."""
     seen: dict[str, dict] = {}
@@ -100,8 +121,10 @@ def weapons() -> list[dict[str, Any]]:
             "weapon_name": name,
             "weapon_defindex": e.get("weapon_defindex"),
             "label": name.replace("weapon_", "").replace("_", " ").upper(),
+            "category": _category(name),
         })
-    return sorted(seen.values(), key=lambda x: x["label"])
+    order = list(CATEGORIES) + ["Other"]
+    return sorted(seen.values(), key=lambda x: (order.index(x["category"]), x["label"]))
 
 
 def skins_for(weapon_name: str) -> list[dict[str, Any]]:

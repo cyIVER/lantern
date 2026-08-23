@@ -312,3 +312,10 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
 .preset .meta { font-size: 10px; color: var(--dim); min-height: 13px; }
 .preset .row { display: flex; gap: 5px; margin-top: 9px; }
 .preset .row .btn { flex: 1; padding: 4px 6px; font-size: 10px; --cut: 5px; }
+
+/* arsenal category headings span the whole grid row */
+.cathead {
+  grid-column: 1 / -1; margin: 10px 0 2px; padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--gold);
+}

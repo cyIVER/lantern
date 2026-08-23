@@ -9,6 +9,16 @@
 #      127.0.0.1:3306, blank user). MenuManager depends on PlayerSettings, so
 #      menu state has nowhere to persist. Point it at the same MariaDB the
 #      skins use, with its own table prefix.
+#
+#   3. CounterStrikeSharp defaults FollowCS2ServerGuidelines to true, which
+#      blocks writes to econ item properties:
+#
+#        Cannot set or get 'CEconItemView::m_iEntityQuality' with
+#        "FollowCS2ServerGuidelines" option enabled
+#
+#      WeaponPaints needs those to apply a paint. The knife MODEL still applies
+#      (different mechanism), so the symptom is a correct knife with no skin and
+#      no in-game error -- the exception only appears in the server log.
 set -euo pipefail
 cd /mnt/c/Users/iveri/Documents/code/lantern/stack
 
@@ -68,6 +78,9 @@ echo "=== 2. PlayerSettings database ==="
 export PS_HOST="$DB_HOST:$DB_PORT" PS_NAME="$DB_NAME" PS_USER="$DB_USER" PS_PASS="$DB_PASS"
 patch_json "$CFGDIR/PlayerSettings/PlayerSettings.json" \
   "cfg['DatabaseParams'] = {'Host': os.environ['PS_HOST'], 'Name': os.environ['PS_NAME'], 'User': os.environ['PS_USER'], 'Password': os.environ['PS_PASS'], 'Table': 'settings_'}"
+
+echo "=== 3. CounterStrikeSharp core: allow econ item writes ==="
+patch_json "game/csgo/addons/counterstrikesharp/configs/core.json"   "cfg['FollowCS2ServerGuidelines'] = False"
 
 echo
 echo "=== result (passwords masked) ==="

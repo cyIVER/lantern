@@ -406,27 +406,63 @@ async function loBuildGloves() {
 }
 
 async function loBuildWeapons() {
+  // Arsenal view: every weapon, grouped, each showing the skin currently
+  // assigned. Assigning a skin never gives you the gun -- WeaponPaints only
+  // paints what you buy or pick up -- so a full loadout can be prepared before
+  // a match without affecting competitive play.
   LO.weapons = LO.weapons || await api('/api/loadout/catalog/weapons');
-  const sel = $('#lo-weapon');
-  sel.replaceChildren(...LO.weapons.map((w) => new Option(w.label, w.weapon_name)));
-  sel.onchange = loBuildSkins;
-  await loBuildSkins();
+  $('#lo-weapon').closest('.picker').style.display = 'none';
+
+  const assigned = (LO.current && LO.current.skins) || {};
+  const grid = $('#grid-skins');
+  const groups = {};
+  LO.weapons.forEach((w) => (groups[w.category] ||= []).push(w));
+
+  const nodes = [];
+  for (const [cat, list] of Object.entries(groups)) {
+    const head = document.createElement('div');
+    head.className = 'cathead';
+    head.textContent = cat;
+    nodes.push(head);
+    list.forEach((w) => {
+      const paint = assigned[String(w.weapon_defindex)];
+      const el = document.createElement('div');
+      el.className = 'item' + (paint ? ' current' : '');
+      el.innerHTML = `
+        <div class="nm">${escapeHtml(w.label)}</div>
+        <div class="sub">${paint ? 'paint ' + paint : 'default'}</div>`;
+      el.onclick = () => loBuildSkinsFor(w);
+      nodes.push(el);
+    });
+  }
+  grid.replaceChildren(...nodes);
 }
 
-async function loBuildSkins() {
-  const weapon = $('#lo-weapon').value;
-  if (!weapon) return;
-  const skins = await api(`/api/loadout/catalog/skins/${weapon}`);
-  $('#grid-skins').replaceChildren(...skins.map((s) => {
+async function loBuildSkinsFor(weapon) {
+  const skins = await api(`/api/loadout/catalog/skins/${weapon.weapon_name}`);
+
+  const back = document.createElement('div');
+  back.className = 'item';
+  back.style.borderColor = 'var(--gold)';
+  back.innerHTML = `<div style="height:72px;display:flex;align-items:center;
+                     justify-content:center;font-size:26px;color:var(--gold)">←</div>
+                    <div class="nm">All weapons</div>
+                    <div class="sub">${escapeHtml(weapon.label)}</div>`;
+  back.onclick = loBuildWeapons;
+
+  $('#grid-skins').replaceChildren(back, ...skins.map((sk) => {
     const el = document.createElement('div');
     el.className = 'item';
-    const short = (s.paint_name || '').split('|').slice(1).join('|').trim() || s.paint_name;
-    el.innerHTML = `${imgTag(s.image, s.paint_name)}
+    const short = (sk.paint_name || '').split('|').slice(1).join('|').trim()
+                  || sk.paint_name || 'Default';
+    el.innerHTML = `${imgTag(sk.image, sk.paint_name)}
       <div class="nm">${escapeHtml(short)}</div>
-      <div class="sub">paint ${s.paint}</div>`;
-    el.onclick = () => loApply('/api/loadout/skin',
-      { steamid64: loSteamId(), weapon_defindex: s.weapon_defindex, paint: s.paint },
-      s.paint_name);
+      <div class="sub">paint ${sk.paint}</div>`;
+    el.onclick = () => loApply('/api/loadout/skin', {
+      steamid64: loSteamId(),
+      weapon_defindex: sk.weapon_defindex ?? weapon.weapon_defindex,
+      paint: sk.paint,
+    }, `${weapon.label} | ${short}`);
     return el;
   }));
 }
@@ -447,7 +483,7 @@ $$('.subtab').forEach((b) => b.addEventListener('click', async () => {
   $('#lo-' + b.dataset.lo).classList.add('active');
   if (b.dataset.lo === 'knife')  await loBuildKnives();
   if (b.dataset.lo === 'gloves') await loBuildGloves();
-  if (b.dataset.lo === 'skins')  await loBuildWeapons();
+  if (b.dataset.lo === 'skins')  { await loLoadCurrent(); await loBuildWeapons(); }
 }));
 
 $('#lo-player').addEventListener('change', () => { $('#lo-steamid').value = ''; loLoadCurrent(); });

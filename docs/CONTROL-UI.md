@@ -93,6 +93,29 @@ Everything still works offline; the tiles just render without art.
 > Only SteamID64s are accepted, and only 17-digit `7656119…` values. Bots carry
 > synthetic `9007…` ids and are filtered out of the player picker.
 
+### Arsenal — default skins per weapon
+
+The **Arsenal** sub-tab lists every weapon, grouped (Pistols, SMGs, Rifles,
+Snipers, Heavy), each showing the skin currently assigned. Click a weapon to
+browse its finishes and pick one.
+
+This is a *pre-match* loadout: assigning a skin **never gives you the weapon**.
+WeaponPaints only paints a gun you buy or pick up normally, so a full arsenal
+can be prepared without affecting competitive play.
+
+> **Prerequisite, and a silent one.** CounterStrikeSharp ships with
+> `FollowCS2ServerGuidelines: true`, which blocks writes to econ item
+> properties. Knife *models* still apply (a different mechanism), so the symptom
+> is a correct knife with no finish and no in-game error at all — the exception
+> appears only in the server log:
+>
+> ```
+> Cannot set or get 'CEconItemView::m_iEntityQuality' with
+> "FollowCS2ServerGuidelines" option enabled
+> ```
+>
+> `stack/bootstrap/configure-menus.sh` sets it to `false`.
+
 ### Presets and `!1` … `!9`
 
 Nine slots per player. **Save** snapshots whatever that player currently has —
