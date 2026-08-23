@@ -24,6 +24,21 @@ docker compose ps
    settings are already supplied via environment, so it should validate on its own.
    Create your admin account here; the password is yours and never goes through an agent.
 
+   Admin login identity (no secret here -- the password is not recorded anywhere):
+
+   | Field | Value |
+   |---|---|
+   | App name | `LANtern` |
+   | App URL | `http://192.168.0.115` |
+   | Admin email / login handle | `iveri@lantern.lan` |
+
+   `MAIL_DRIVER` is `log`, so **password reset email will never arrive**. If you are
+   locked out, create a new admin from the CLI instead:
+
+   ```bash
+   docker compose exec panel php artisan p:user:make
+   ```
+
 2. **Create the Node** — in the panel, *Admin → Nodes → Create Node*:
 
    | Field | Value |
