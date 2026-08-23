@@ -10,6 +10,7 @@ approval-gated write design planned for the LANtern panel.
 from __future__ import annotations
 
 import os
+import re
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
@@ -32,6 +33,10 @@ app = MCPServer(
 # Every tool is a pure read. Marking them explicitly lets MCP clients skip
 # approval prompts and makes the read-only contract machine-checkable.
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True)
+MUTATING = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True)
+
+# Write tools stay inert unless this is explicitly set in the environment.
+WRITE_ENABLED = os.environ.get("LANTERN_ROUTER_WRITE") == "1"
 
 # Bands worth probing on a dual-band Archer BE230 / BE3600.
 BANDS = (
@@ -148,7 +153,7 @@ def write_access_status() -> dict:
     rather than an attempt at a tool that is not here.
     """
     return {
-        "writes_available": False,
+        "writes_available": WRITE_ENABLED,
         "reason": (
             "This server is read-only by design. Router changes require human "
             "approval and re-entry of the admin password, which an agent cannot "
@@ -163,6 +168,55 @@ def write_access_status() -> dict:
         "password_configured": credentials.is_configured(),
         "router_host": rt.HOST,
     }
+
+
+@app.tool(annotations=MUTATING)
+def add_dhcp_reservation(mac: str, ip: str, comment: str = "", apply: bool = False) -> dict:
+    """Pin a device to a fixed IP by MAC address.
+
+    Two independent gates before anything is written:
+      1. LANTERN_ROUTER_WRITE=1 must be set in the server's environment
+      2. apply=True must be passed -- the default returns a proposal only
+
+    Refuses to overwrite an existing binding or to double-book an IP.
+    """
+    if not WRITE_ENABLED:
+        return {
+            "applied": False,
+            "blocked_by": "LANTERN_ROUTER_WRITE is not set to 1",
+            "hint": "Writes are disabled. Set it in .mcp.json env and restart the client.",
+        }
+
+    normalized = "-".join(
+        re.sub(r"[^0-9A-Fa-f]", "", mac).upper()[i:i + 2] for i in range(0, 12, 2)
+    )
+    if len(normalized) != 17:
+        raise rt.RouterUnavailable(f"Not a valid MAC address: {mac!r}")
+
+    with rt.session() as client:
+        if not hasattr(client, "add_ipv4_reservation"):
+            raise rt.RouterUnavailable("This router model cannot add reservations.")
+
+        current = client.get_ipv4_reservations()
+        same_mac = [r for r in current
+                    if r.macaddr.upper().replace(":", "-") == normalized]
+        if same_mac:
+            if same_mac[0].ipaddr == ip:
+                return {"applied": False, "reason": "already reserved", "mac": normalized, "ip": ip}
+            return {"applied": False, "reason": "MAC already bound to a different IP",
+                    "existing_ip": same_mac[0].ipaddr, "requested_ip": ip}
+
+        if any(r.ipaddr == ip for r in current):
+            return {"applied": False, "reason": "IP already reserved for another MAC"}
+
+        proposal = {"mac": normalized, "ip": ip, "comment": comment}
+        if not apply:
+            return {"applied": False, "proposal": proposal,
+                    "next_step": "call again with apply=True to write it"}
+
+        client.add_ipv4_reservation(normalized, ip, comment, True)
+        after = client.get_ipv4_reservations()
+        return {"applied": any(r.ipaddr == ip for r in after), **proposal}
 
 
 if __name__ == "__main__":
