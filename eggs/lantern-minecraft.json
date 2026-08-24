@@ -224,7 +224,7 @@
       "name": "JVM headroom (MiB)",
       "description": "Memory held back from the heap for metaspace, GC structures and direct buffers. Too low and the kernel OOM-kills the container with no Java stack trace. Raise it if you see kills at a heap that looks healthy.",
       "env_variable": "JVM_HEADROOM_MB",
-      "default_value": "1024",
+      "default_value": "2048",
       "user_viewable": true,
       "user_editable": true,
       "rules": [

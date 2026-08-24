@@ -134,7 +134,7 @@ VARIABLES = [
         "Only used when an RCON password is set.",
     ),
     variable(
-        "JVM headroom (MiB)", "JVM_HEADROOM_MB", 1024,
+        "JVM headroom (MiB)", "JVM_HEADROOM_MB", 2048,
         ["required", "numeric", "between:512,4096"],
         "Memory held back from the heap for metaspace, GC structures and direct "
         "buffers. Too low and the kernel OOM-kills the container with no Java "

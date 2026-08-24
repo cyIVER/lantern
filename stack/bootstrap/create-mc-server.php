@@ -68,9 +68,13 @@ $data = [
     'allocation_additional' => [$rconAlloc->id],
     'node_id'     => $node->id,
 
-    // 11264 MiB total => 10240 MiB heap after the 1024 MiB JVM headroom, which
-    // is what the pack authors ask for at 2-5 players. Leaves the host ~10 GB
-    // for a modded client and ~6 GB for Windows while this is the only server up.
+    // 11264 MiB total => 9216 MiB heap after 2048 MiB of headroom.
+    //
+    // Slightly under the 10 GB the pack authors suggest, deliberately. Aikar's
+    // flags include -XX:+AlwaysPreTouch, so the JVM commits the entire heap at
+    // startup; a 10 GB heap in an 11 GB container left ~1 GB for the metaspace
+    // of 455 mods plus code cache, threads and direct buffers, and the server
+    // pinned itself at the cgroup limit and never finished loading.
     'memory' => 11264,
     'swap'   => 0,
     'disk'   => 30000,      // 1.1 GB pack extracted to ~6 GB, plus world growth
@@ -99,7 +103,7 @@ $data = [
         'WHITELIST'           => '0',
         'RCON_PASSWORD'       => $rcon,
         'RCON_PORT'           => '25575',
-        'JVM_HEADROOM_MB'     => '1024',
+        'JVM_HEADROOM_MB'     => '2048',
     ],
 
     'start_on_completion' => false,
