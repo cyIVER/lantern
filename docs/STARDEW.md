@@ -119,39 +119,62 @@ a security preference, not a technical need.
 
 ## Controlling it
 
-It is deliberately **not** in the Pelican panel. Pelican supervises a server
-process; there is no Stardew server process to supervise, only a whole game
-pretending to be one. Three surfaces instead.
+It is deliberately **not** in the Pelican panel, and deliberately **not** a tab
+in the CS2 control UI. Pelican supervises a server process and there is no
+Stardew server process to supervise, only a whole game pretending to be one.
+And a farm has nothing to do with knife rounds.
+
+### Stardew control UI — `http://192.168.0.115:8092`
+
+Its own application, in `stardew-ui/`. Warm parchment rather than the CS2
+panel's dark tactical look, because they are different games.
+
+- Invite code, with a copy button
+- Players and cabins, and a button to grant admin
+- **Mods**: everything installed, with a switch per mod, versions, authors,
+  content-pack tags, and a warning when an enabled mod's dependency is missing
+  or disabled
+- Time of day, render rate, reload world
+- A live screenshot of the farm
+- Restart the server, which is the only way a mod toggle takes effect
 
 ### VNC console — `http://192.168.0.115:5800`
 
-The actual running game. Log in with `VNC_PASSWORD` and you can watch the farm,
-drive the host character, and read the invite code off the screen.
-
-Set `SERVER_FPS` above 0 first or you get a black screen: rendering is disabled
-by default, because drawing frames nobody is watching is pure waste.
+The actual running game. Log in with `VNC_PASSWORD` to watch the farm or drive
+the host character. Set the render rate above 0 first or you get a black
+screen; rendering is off by default because drawing frames nobody watches is
+pure waste.
 
 ### HTTP API — `http://192.168.0.115:8091`
 
-A real REST API, with an OpenAPI spec at `/swagger/v1/swagger.json`.
+JunimoServer's own REST API, with an OpenAPI spec at `/swagger/v1/swagger.json`.
 
 | Route | Auth | Returns |
 |---|---|---|
 | `/health` | none | game-loop liveness: `gameAvailable`, `tickCount`, `isFrozen` |
-| `/status` | bearer | player count, max players, Steam and GOG invite codes, version |
+| `/status` | bearer | players, max, Steam and GOG invite codes, version |
 | `/players` | bearer | connected players |
-| `/settings` | bearer | farm name, farm type, profit margin, cabin count |
+| `/settings` | bearer | farm name, type, profit margin, cabins |
 | `/cabins` | bearer | cabin strategy and assignments |
 
 `/health` is intentionally open so a monitor can poll it. **Everything else
-returns 401 without the token** — which reads exactly like "not ready yet" if
-you forget the header, and cost an hour to notice while the invite code sat
-plainly in the log.
+401s without the token** — which reads exactly like "not ready yet" if you
+forget the header.
 
 ```bash
 KEY=$(grep '^API_KEY=' stardew/.env | cut -d= -f2- | tr -d '"')
 curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8091/status
 ```
+
+> **The control UI holds the Docker socket.** It needs it for exactly one
+> thing: restarting the game container after a mod toggle, because SMAPI
+> enumerates mods once at process start and nothing else can apply a change.
+>
+> Be clear-eyed about the trade. Anything that reaches port 8092 can reach the
+> Docker daemon, which is root-equivalent on the host. That is acceptable on a
+> LAN box you own and unacceptable if you ever forward the port. If you would
+> rather not accept it, drop the socket mount from `stardew/compose.yml` and
+> restart by hand with `./lantern use stardew` — everything else still works.
 
 ### Lifecycle
 
@@ -164,9 +187,44 @@ bash bootstrap/setup-stardew.sh --validate
 
 ---
 
+## Importing an existing save
+
+Officially supported, and the flag in step two is the part that matters.
+
+**1. Copy the save folder in.** Saves live at `%appdata%\StardewValley\Saves`
+on Windows, `~/.config/StardewValley/Saves` elsewhere, in a folder named
+`{FarmName}_{number}`. From the directory containing it:
+
+```bash
+docker run --rm -v lantern-stardew_saves:/sv -v "$(pwd)":/backup \
+  alpine cp -r /backup/YourFarm_123456789 /sv/Saves/
+```
+
+**2. Import it, keeping the original owner playable:**
+
+```
+saves import YourFarm_123456789 --swap-host-to 76561198XXXXXXXXX --reload
+```
+
+**Without `--swap-host-to`, the server takes the original farmer as its
+automation bot** and that character is gone as a playable one — levels, items,
+money, relationships, all of it becomes the idle host. With the original
+owner's platform ID they keep everything and pick their farmer normally on
+connect.
+
+Two things with no undo: the import **rewrites the save in place**, so back up
+the local copy first; and it is **one-way**, with no supported route back to a
+local single-player or co-op game.
+
 ## Mods
 
-Drop mod folders into `stardew/mods/` and restart. SMAPI loads anything there.
+Drop mod folders into `stardew/mods/` — SMAPI loads anything there. Enable
+and disable them from the control UI, which renames the folder with a leading
+dot; that is how SMAPI skips a mod, and it means a human reading the folder
+sees the same truth the UI does.
+
+**Toggles apply on the next server restart.** SMAPI enumerates the mods folder
+once, at process start. The UI says so and offers a restart button.
 
 ```
 stardew/mods/

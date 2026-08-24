@@ -15,6 +15,7 @@
 #   3. API port moved 8080 -> 8091. Wings owns 8080.
 #   4. ./mods mounted so SMAPI loads them, and memory capped so this cannot
 #      starve the WSL VM the Pelican stack shares.
+#   5. A `ui` service, which upstream does not have.
 #
 # This runs BESIDE Pelican, not inside it. Stardew has no dedicated server
 # binary -- JunimoServer runs the real game headless against a virtual display
@@ -116,6 +117,36 @@ services:
       - server
     mem_limit: 256m
     restart: on-failure
+
+  # Control UI. Its own application, not a tab in the CS2 panel -- different
+  # game, different audience.
+  ui:
+    build: ../stardew-ui
+    image: lantern/stardew-ui:latest
+    container_name: sdvd-ui
+    ports:
+      - "${UI_PORT:-8092}:8092"
+    environment:
+      STARDEW_API_URL: "http://server:8080"
+      STARDEW_API_KEY: "${API_KEY:-}"
+      SDV_CONTAINER: "sdvd-server"
+      MODS_DIR: "/mods"
+    volumes:
+      # Read-write: enabling and disabling a mod is a folder rename.
+      - ./mods:/mods
+      # The Docker socket is here for exactly one reason: SMAPI enumerates mods
+      # once at process start, so a toggle cannot take effect without
+      # restarting the game container, and nothing else can do that.
+      #
+      # Be clear-eyed about the trade. Anything that reaches this service can
+      # reach the Docker daemon, which is root-equivalent on the host. It is
+      # acceptable here because the port is LAN-only on a machine you own; do
+      # not forward it. See docs/STARDEW.md.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - server
+    mem_limit: 256m
+    restart: unless-stopped
 
 volumes:
   steam-session:

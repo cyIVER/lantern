@@ -3,6 +3,12 @@
 *.env
 !.env.example
 
+# Stardew: mod folders and runtime output are local, not source
+stardew/mods/*
+!stardew/mods/.gitkeep
+stardew/settings/
+stardew/diagnostics/
+
 # Runtime data
 data/
 volumes/
