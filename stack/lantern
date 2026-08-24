@@ -4,23 +4,30 @@
 #   ./lantern status          what is up, and what it is costing
 #   ./lantern use cs2         stop everything else, start CS2
 #   ./lantern use minecraft   stop everything else, start Minecraft
+#   ./lantern use stardew     stop everything else, start Stardew Valley
 #   ./lantern stop            stop all game servers, leave the panel up
 #
-# This host has 31.8 GB. A modded Minecraft server wants 11 GB and its client
-# another 10 GB, on top of 6 GB for Windows and 1.5 GB for the stack itself.
-# There is no combination in which two game servers and a game client coexist,
-# so the constraint is enforced here rather than left as a habit -- habits are
-# not reliable at 2 AM.
+# WSL2 gives its VM 18 GB (see ~/.wslconfig) and every container lives inside
+# that, alongside Pelican, Wings, MariaDB, Redis and the control UI. Minecraft
+# alone claims 11.5 GB of it. There is no combination in which two game servers
+# and a game client coexist, so the constraint is enforced here rather than left
+# as a habit -- habits are not reliable at 2 AM.
 #
 # Run from stack/, inside Ubuntu WSL.
 set -uo pipefail
 cd "$(dirname "$0")" || exit 1
 
-# name -> the Pelican server it maps to
+# Pelican-managed servers, by the name Pelican knows them as.
 declare -A GAMES=(
   [cs2]="LANtern CS2"
   [minecraft]="LANtern Minecraft"
 )
+
+# Stardew is not one of them. It has no dedicated server binary -- JunimoServer
+# runs the real game headless against a virtual display -- so there is nothing
+# for Pelican to manage and it lives in its own compose project.
+SDV_DIR="../stardew"
+SDV_CONTAINER="sdvd-server"
 
 c_dim=$'\033[2m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_bold=$'\033[1m'; c_off=$'\033[0m'
 
@@ -46,10 +53,27 @@ mem_of() {
     | tail -1 | tr -d '[:space:]'
 }
 
-state_of() {  # docker's view, which is the only one that reflects reality
+# Docker's view, which is the only one that reflects reality. The panel's status
+# field has reported "ready" over a completely empty server directory.
+state_of() {
   local u="$1"
   [ -z "$u" ] && { echo "absent"; return; }
-  docker inspect -f '{{.State.Status}}' "$u" 2>/dev/null || echo absent
+  { docker inspect -f '{{.State.Status}}' "$u" 2>/dev/null || echo absent; } | tr -d "[:space:]"
+}
+
+sdv_state() {
+  # docker inspect writes a blank line and exits non-zero for a missing
+  # container, so the fallback would arrive with a newline glued to it.
+  { docker inspect -f '{{.State.Status}}' "$SDV_CONTAINER" 2>/dev/null || echo absent; } | tr -d "[:space:]"
+}
+
+sdv_power() {   # $1 = up | down
+  [ -d "$SDV_DIR" ] || return 0
+  if [ "$1" = "up" ]; then
+    (cd "$SDV_DIR" && docker compose up -d >/dev/null 2>&1)
+  else
+    (cd "$SDV_DIR" && docker compose stop >/dev/null 2>&1)
+  fi
 }
 
 host_free_gb() {
@@ -59,6 +83,7 @@ host_free_gb() {
 cmd_status() {
   printf '\n%sGame servers%s\n' "$c_bold" "$c_off"
   local anyup=0
+
   for key in "${!GAMES[@]}"; do
     local name="${GAMES[$key]}" u st mem
     u=$(uuid_of "$name"); st=$(state_of "$u"); mem=$(mem_of "$name")
@@ -68,6 +93,14 @@ cmd_status() {
       *)       printf '  %s%-10s %-11s%s  %s\n' "$c_dim" "$key" "$st" "$c_off" "$name" ;;
     esac
   done
+
+  local sdv; sdv=$(sdv_state)
+  case "$sdv" in
+    running) printf '  %s%-10s RUNNING%s  Stardew Valley (JunimoServer)\n' "$c_grn" "stardew" "$c_off"; anyup=1 ;;
+    absent)  printf '  %s%-10s not created%s\n' "$c_dim" "stardew" "$c_off" ;;
+    *)       printf '  %s%-10s %-11s%s  Stardew Valley\n' "$c_dim" "stardew" "$sdv" "$c_off" ;;
+  esac
+
   printf '\n  host memory available: %s GB\n' "$(host_free_gb)"
   [ "$anyup" = "0" ] && printf '  %snothing is running -- ./lantern use <game>%s\n' "$c_dim" "$c_off"
   printf '\n'
@@ -85,6 +118,12 @@ wait_stopped() {
 
 cmd_stop_all() {
   local except="${1:-}"
+
+  if [ "$except" != "stardew" ] && [ "$(sdv_state)" = "running" ]; then
+    printf '  stopping stardew\n'
+    sdv_power down
+  fi
+
   for key in "${!GAMES[@]}"; do
     [ "$key" = "$except" ] && continue
     local name="${GAMES[$key]}" u
@@ -99,9 +138,28 @@ cmd_stop_all() {
 
 cmd_use() {
   local want="${1:-}"
+
+  if [ "$want" = "stardew" ]; then
+    if [ ! -f "${SDV_DIR}/.env" ]; then
+      printf 'stardew is not set up yet.\n' >&2
+      printf 'Run: bash bootstrap/setup-stardew.sh\n' >&2
+      exit 1
+    fi
+    printf '\n'
+    cmd_stop_all stardew
+    if [ "$(sdv_state)" = "running" ]; then
+      printf '  stardew is already running\n'
+    else
+      printf '  starting stardew\n'
+      sdv_power up
+    fi
+    cmd_status
+    return
+  fi
+
   if [ -z "${GAMES[$want]:-}" ]; then
     printf 'unknown game: %s\n' "${want:-<none>}" >&2
-    printf 'choose one of: %s\n' "${!GAMES[*]}" >&2
+    printf 'choose one of: %s stardew\n' "${!GAMES[*]}" >&2
     exit 2
   fi
 
@@ -131,7 +189,7 @@ case "${1:-status}" in
   use)     cmd_use "${2:-}" ;;
   stop)    printf '\n'; cmd_stop_all ""; cmd_status ;;
   *)
-    sed -n '2,16p' "$0" | sed 's/^# \?//'
+    sed -n '2,17p' "$0" | sed 's/^# \?//'
     exit 2
     ;;
 esac

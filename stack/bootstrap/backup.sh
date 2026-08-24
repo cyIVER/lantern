@@ -24,8 +24,25 @@ GAME="${1:-}"
 
 declare -A GAMES=( [cs2]="LANtern CS2" [minecraft]="LANtern Minecraft" )
 
+# Stardew is not a Pelican server; its saves live in a named compose volume.
+if [ "$GAME" = "stardew" ]; then
+  DEST="${LANTERN_BACKUP_DIR:-/mnt/e/lantern-backups}"
+  mkdir -p "$DEST" || { echo "cannot write to ${DEST}" >&2; exit 1; }
+  OUT="${DEST}/stardew-$(date -u +%Y%m%d-%H%M%S).tar.zst"
+  echo "  archiving the saves volume -> ${OUT}"
+  docker run --rm -v lantern-stardew_saves:/s:ro -v "${DEST}:/out" alpine sh -c "
+    apk add --no-cache zstd tar >/dev/null 2>&1
+    cd /s && tar -c . | zstd -3 -T0 -q -o /out/$(basename "$OUT")
+  " || { echo "  FAILED" >&2; exit 1; }
+  [ -s "$OUT" ] || { echo "  FAILED: empty archive" >&2; rm -f "$OUT"; exit 1; }
+  echo "  wrote $(du -h "$OUT" | cut -f1)"
+  mapfile -t old < <(ls -1t "${DEST}/stardew-"*.tar.zst 2>/dev/null | tail -n +$((KEEP + 1)))
+  [ "${#old[@]}" -gt 0 ] && { echo "  pruning ${#old[@]} old backup(s)"; rm -f "${old[@]}"; }
+  exit 0
+fi
+
 if [ -z "${GAMES[$GAME]:-}" ]; then
-  echo "usage: backup.sh <${!GAMES[*]}> [--keep N]" >&2
+  echo "usage: backup.sh <cs2|minecraft|stardew> [--keep N]" >&2
   exit 2
 fi
 NAME="${GAMES[$GAME]}"

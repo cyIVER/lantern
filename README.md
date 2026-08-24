@@ -27,6 +27,7 @@ Named for a beacon on the LAN.
 | **[CONNECTING.md](docs/CONNECTING.md)** | How you and your friends join. Start here for a LAN party. |
 | **[USING.md](docs/USING.md)** | Day-to-day: maps, modes, moderation, admin commands. |
 | **[MINECRAFT.md](docs/MINECRAFT.md)** | All the Mods 10: how friends join, how it is run and updated. |
+| **[STARDEW.md](docs/STARDEW.md)** | The always-on farm: Steam login, mods, and why it is not a Pelican egg. |
 | **[CONTROL-UI.md](docs/CONTROL-UI.md)** | How the CS2 UI works, its API, and how to extend it. |
 | **[DECISIONS.md](docs/DECISIONS.md)** | Why it is built this way, and the Wings-on-Docker-Desktop proof. |
 | **[ROUTER-MCP.md](docs/ROUTER-MCP.md)** | Router tools for AI agents, plus the DHCP incident writeup. |
