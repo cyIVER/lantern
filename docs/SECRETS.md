@@ -150,6 +150,7 @@ know what exists and how to rotate it.
 | `RCON_PASSWORD` | Pelican server variable → `ui/.env` | `bootstrap/rotate-rcon.php` |
 | `PELICAN_API_KEY` | `ui/.env` | `bootstrap/create-ui-credentials.php` |
 | WeaponPaints DB user | `ui/.env` | `bootstrap/setup-weaponpaints-db.sh` |
+| `STARDEW_API_URL`, `STARDEW_API_KEY` | `ui/.env` | copied from `stardew/.env` so the control UI can reach the farm |
 
 Rotate RCON any time — it regenerates the password, updates Pelican, rewrites
 `ui/.env` and restarts what needs restarting:

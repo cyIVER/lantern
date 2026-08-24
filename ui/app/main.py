@@ -21,11 +21,11 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import loadout, presets, rcon, watcher
+from . import loadout, presets, rcon, stardew, watcher
 
 STATIC = pathlib.Path(__file__).parent.parent / "static"
 
@@ -540,6 +540,94 @@ async def presets_apply(body: PresetBody) -> dict[str, Any]:
 @app.delete("/api/presets/{steamid64}/{slot}")
 async def presets_delete(steamid64: str, slot: int) -> dict[str, Any]:
     return {"ok": True, "removed": presets.delete(_valid_steamid(steamid64), slot)}
+
+
+# ------------------------------------------------------------------- stardew
+# A different shape of integration from CS2. JunimoServer publishes a real REST
+# API with an OpenAPI spec, so these are thin proxies rather than parsers -- and
+# the UI can hold one control surface for all three games instead of sending
+# people to a separate panel per title.
+class TimeBody(BaseModel):
+    time: int
+
+
+class FpsBody(BaseModel):
+    fps: int
+
+
+class PlayerNameBody(BaseModel):
+    name: str
+
+
+def _sdv(exc: stardew.StardewError) -> HTTPException:
+    return HTTPException(503, str(exc))
+
+
+@app.get("/api/stardew")
+async def stardew_overview() -> dict[str, Any]:
+    """Everything the tab needs in one call. Never raises: a farm that is still
+    loading answers /health long before /status, and a partial dashboard beats
+    a bare error."""
+    if not stardew.configured():
+        return {"configured": False,
+                "note": "STARDEW_API_URL is not set in ui/.env"}
+    return await stardew.overview()
+
+
+@app.get("/api/stardew/screenshot")
+async def stardew_screenshot() -> Response:
+    try:
+        png = await stardew.screenshot()
+    except stardew.StardewError as exc:
+        raise _sdv(exc) from exc
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/stardew/time")
+async def stardew_set_time(body: TimeBody) -> dict[str, Any]:
+    # Stardew's clock runs 600 (6am) to 2600 (2am the following day).
+    if not 600 <= body.time <= 2600:
+        raise HTTPException(400, "time must be between 600 (6am) and 2600 (2am)")
+    try:
+        return {"ok": True, "result": await stardew.set_time(body.time)}
+    except stardew.StardewError as exc:
+        raise _sdv(exc) from exc
+
+
+@app.post("/api/stardew/rendering")
+async def stardew_set_rendering(body: FpsBody) -> dict[str, Any]:
+    if not 0 <= body.fps <= 60:
+        raise HTTPException(400, "fps must be 0-60 (0 disables rendering)")
+    try:
+        return {"ok": True, "result": await stardew.set_rendering(body.fps)}
+    except stardew.StardewError as exc:
+        raise _sdv(exc) from exc
+
+
+@app.post("/api/stardew/reload")
+async def stardew_reload() -> dict[str, Any]:
+    try:
+        return {"ok": True, "result": await stardew.reload()}
+    except stardew.StardewError as exc:
+        raise _sdv(exc) from exc
+
+
+@app.post("/api/stardew/admin")
+async def stardew_grant_admin(body: PlayerNameBody) -> dict[str, Any]:
+    try:
+        return {"ok": True, "result": await stardew.grant_admin(body.name)}
+    except stardew.StardewError as exc:
+        raise _sdv(exc) from exc
+
+
+@app.delete("/api/stardew/farmhand/{name}")
+async def stardew_delete_farmhand(name: str) -> dict[str, Any]:
+    """Frees a cabin. Destructive -- it deletes that farmhand's character."""
+    try:
+        return {"ok": True, "result": await stardew.delete_farmhand(name)}
+    except stardew.StardewError as exc:
+        raise _sdv(exc) from exc
 
 
 @app.get("/api/watcher")

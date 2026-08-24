@@ -578,3 +578,180 @@ async function loBuildPresets() {
 ['#lo-player', '#lo-steamid'].forEach((sel) =>
   $(sel).addEventListener('change', loBuildPresets));
 document.querySelector('[data-tab="loadout"]').addEventListener('click', loBuildPresets);
+
+/* ---------------------------------------------------------------- stardew */
+/* Unlike CS2, this talks to a real REST API rather than parsing console text,
+   so the whole tab is a thin render of /api/stardew. That endpoint never
+   throws: a farm still loading answers /health long before /status, and a
+   partial dashboard is more useful than one error message. */
+
+const SDV_TIMES = [
+  [600, '6:00 am — sunrise'], [900, '9:00 am'], [1200, '12:00 pm — noon'],
+  [1500, '3:00 pm'], [1800, '6:00 pm'], [2000, '8:00 pm — dusk'],
+  [2200, '10:00 pm'], [2400, '12:00 am — midnight'], [2600, '2:00 am — collapse'],
+];
+
+let sdvTimer = null;
+
+function sdvStat(dl, label, value) {
+  const d = document.createElement('div');
+  const dt = document.createElement('dt');
+  const dd = document.createElement('dd');
+  dt.textContent = label;
+  dd.innerHTML = value;
+  d.append(dt, dd);
+  dl.appendChild(d);
+}
+
+async function sdvRefresh() {
+  let d;
+  try {
+    d = await api('/api/stardew');
+  } catch (e) {
+    $('#sdv-offline').textContent = e.message;
+    $('#sdv-offline').hidden = false;
+    $('#sdv-body').hidden = true;
+    return;
+  }
+
+  if (!d.configured) {
+    $('#sdv-offline').textContent =
+      'Stardew is not wired up. Set STARDEW_API_URL in ui/.env — see docs/STARDEW.md.';
+    $('#sdv-offline').hidden = false;
+    $('#sdv-body').hidden = true;
+    return;
+  }
+
+  if (!d.online) {
+    const why = d.errors?.health || 'the farm is not running';
+    $('#sdv-offline').innerHTML =
+      `<span class="sdv-dot sdv-off"></span>Farm is offline — ${why}` +
+      `<br><span class="hint">start it with <code>./lantern use stardew</code></span>`;
+    $('#sdv-offline').hidden = false;
+    $('#sdv-body').hidden = true;
+    return;
+  }
+
+  $('#sdv-offline').hidden = true;
+  $('#sdv-body').hidden = false;
+
+  const st = d.status || {};
+  const h = d.health || {};
+  const set = d.settings || {};
+
+  $('#sdv-code').textContent = st.steamInviteCode || '—';
+
+  const dl = $('#sdv-stats');
+  dl.replaceChildren();
+  sdvStat(dl, 'Players', `${st.playerCount ?? 0} / ${st.maxPlayers ?? '?'}`);
+  sdvStat(dl, 'Farm', (set.game?.farmName) || '—');
+  sdvStat(dl, 'Engine', `<span class="sdv-dot ${h.isFrozen ? 'sdv-off' : 'sdv-on'}"></span>` +
+                        (h.isFrozen ? 'frozen' : `${h.lastTickMs ?? '?'} ms/tick`));
+  sdvStat(dl, 'Ticks', (h.tickCount ?? 0).toLocaleString());
+  sdvStat(dl, 'Render', (d.rendering?.fps ?? 0) > 0 ? `${d.rendering.fps} fps` : 'off');
+  sdvStat(dl, 'Version', st.serverVersion || '—');
+
+  // players
+  const ps = (d.players?.players) || [];
+  const tbl = $('#sdv-players');
+  const tb = tbl.querySelector('tbody');
+  tb.replaceChildren();
+  if (!ps.length) {
+    tbl.hidden = true;
+    $('#sdv-players-empty').hidden = false;
+  } else {
+    tbl.hidden = false;
+    $('#sdv-players-empty').hidden = true;
+    ps.forEach((pl) => {
+      const name = pl.name || pl.playerName || pl.farmerName || '(unnamed)';
+      const tr = document.createElement('tr');
+      const td = (t) => { const c = document.createElement('td'); c.textContent = t; return c; };
+      tr.append(td(name), td(pl.isHost ? 'host' : (pl.farmhandName || '—')));
+
+      const act = document.createElement('td');
+      act.className = 'right';
+      const admin = document.createElement('button');
+      admin.className = 'btn';
+      admin.textContent = 'Make admin';
+      admin.onclick = async () => {
+        try { await api('/api/stardew/admin', { body: { name } }); toast(`${name} is now an admin.`); }
+        catch (e) { toast(e.message, true); }
+      };
+      act.appendChild(admin);
+      tr.appendChild(act);
+      tb.appendChild(tr);
+    });
+  }
+
+  // cabins
+  const cb = d.cabins;
+  $('#sdv-cabins').textContent = cb
+    ? `${cb.strategy} — ${cb.assignedCount}/${cb.totalCount} assigned, ${cb.availableCount} free`
+    : '—';
+
+  $('#sdv-fps').value = String(d.rendering?.fps ?? 0);
+}
+
+function sdvInit() {
+  const sel = $('#sdv-time');
+  if (!sel.options.length) {
+    SDV_TIMES.forEach(([v, label]) => sel.add(new Option(label, v)));
+    sel.value = '900';
+  }
+
+  $('#sdv-copy').onclick = async () => {
+    const code = $('#sdv-code').textContent.trim();
+    if (!code || code === '—') return;
+    try { await navigator.clipboard.writeText(code); toast('Invite code copied.'); }
+    catch { toast('Could not copy — select it manually.', true); }
+  };
+
+  $('#sdv-set-time').onclick = async () => {
+    try {
+      await api('/api/stardew/time', { body: { time: Number($('#sdv-time').value) } });
+      toast('Time set.');
+      sdvRefresh();
+    } catch (e) { toast(e.message, true); }
+  };
+
+  $('#sdv-set-fps').onclick = async () => {
+    const fps = Number($('#sdv-fps').value);
+    try {
+      await api('/api/stardew/rendering', { body: { fps } });
+      toast(fps ? `Rendering at ${fps} fps.` : 'Rendering disabled.');
+      sdvRefresh();
+    } catch (e) { toast(e.message, true); }
+  };
+
+  $('#sdv-reload').onclick = async () => {
+    if (!confirm('Reload the world from server-settings.json? Players are briefly disconnected.')) return;
+    try { await api('/api/stardew/reload', { body: {} }); toast('World reloaded.'); }
+    catch (e) { toast(e.message, true); }
+  };
+
+  $('#sdv-shot-btn').onclick = async () => {
+    const img = $('#sdv-shot-img');
+    try {
+      const r = await fetch('/api/stardew/screenshot');
+      if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+      const blob = await r.blob();
+      if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+      img.src = URL.createObjectURL(blob);
+      img.hidden = false;
+    } catch (e) {
+      toast(`${e.message} — set the render rate above 0 first.`, true);
+    }
+  };
+}
+
+/* Poll only while the tab is visible. A farm ticking at 30 TPS does not need
+   to be asked about while somebody is looking at the CS2 roster. */
+document.querySelector('[data-tab="stardew"]').addEventListener('click', () => {
+  sdvInit();
+  sdvRefresh();
+  clearInterval(sdvTimer);
+  sdvTimer = setInterval(() => {
+    if (document.querySelector('[data-tab="stardew"]').classList.contains('active')) sdvRefresh();
+    else { clearInterval(sdvTimer); sdvTimer = null; }
+  }, 6000);
+});

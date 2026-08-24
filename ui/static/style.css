@@ -319,3 +319,82 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
   border-bottom: 1px solid var(--line);
   font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--gold);
 }
+
+
+/* ------------------------------------------------------------------ stardew */
+.sdv-top {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 2fr;
+  gap: 18px;
+  margin-bottom: 8px;
+}
+@media (max-width: 760px) { .sdv-top { grid-template-columns: 1fr; } }
+
+.sdv-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--panel-2, rgba(255, 255, 255, .03));
+  border: 1px solid var(--line, #2a2f38);
+  border-radius: 4px;
+}
+.sdv-label {
+  font-size: .68rem;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--dim, #8a929e);
+}
+.sdv-code-row { display: flex; align-items: center; gap: 10px; }
+#sdv-code {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: .09em;
+  color: var(--accent, #f0a020);
+  font-variant-numeric: tabular-nums;
+}
+
+.sdv-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--line, #2a2f38);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.sdv-stats > div {
+  padding: 10px 14px;
+  border-right: 1px solid var(--line, #2a2f38);
+  border-bottom: 1px solid var(--line, #2a2f38);
+}
+.sdv-stats dt {
+  font-size: .62rem;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--dim, #8a929e);
+  margin: 0 0 3px;
+}
+.sdv-stats dd {
+  margin: 0;
+  font-size: .95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sdv-controls { display: flex; flex-direction: column; gap: 10px; }
+.sdv-shot { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+#sdv-shot-img {
+  max-width: 100%;
+  border: 1px solid var(--line, #2a2f38);
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
+.sdv-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+.sdv-on { background: var(--ok, #4caf6d); }
+.sdv-off { background: var(--dim, #8a929e); }

@@ -41,6 +41,7 @@
   <button class="tab" data-tab="mode">Game Mode</button>
   <button class="tab" data-tab="loadout">Loadout</button>
   <button class="tab" data-tab="match">Match</button>
+  <button class="tab" data-tab="stardew">Stardew</button>
   <button class="tab" data-tab="console">Console</button>
 </nav>
 
@@ -132,6 +133,76 @@
         <select id="lo-weapon"></select>
       </div>
       <div class="items" id="grid-skins"></div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------ STARDEW -->
+  <section id="tab-stardew" class="panel">
+    <div class="panel-head">
+      <h2>Stardew Valley</h2>
+      <span class="hint">runs beside Pelican, not inside it &mdash; there is no server process to supervise</span>
+    </div>
+
+    <div id="sdv-offline" class="empty">Checking the farm&hellip;</div>
+
+    <div id="sdv-body" hidden>
+      <div class="sdv-top">
+        <div class="sdv-invite">
+          <span class="sdv-label">Steam invite code</span>
+          <div class="sdv-code-row">
+            <code id="sdv-code">&mdash;</code>
+            <button class="btn" id="sdv-copy">Copy</button>
+          </div>
+          <span class="hint">Co-op &rarr; Join &rarr; Enter invite code. Changes on every restart.</span>
+        </div>
+        <dl class="sdv-stats" id="sdv-stats"></dl>
+      </div>
+
+      <div class="panel-head"><h2>Players</h2></div>
+      <div id="sdv-players-empty" class="empty">Nobody on the farm.</div>
+      <table id="sdv-players" class="grid" hidden>
+        <thead><tr><th>Name</th><th>Farmhand</th><th class="right">Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="panel-head"><h2>Cabins</h2></div>
+      <div id="sdv-cabins" class="empty">&mdash;</div>
+
+      <div class="panel-head">
+        <h2>Farm controls</h2>
+        <span class="hint">these change the live game</span>
+      </div>
+      <div class="sdv-controls">
+        <div class="picker">
+          <label for="sdv-time">Time of day</label>
+          <select id="sdv-time"></select>
+          <button class="btn" id="sdv-set-time">Set</button>
+        </div>
+        <div class="picker">
+          <label for="sdv-fps">Render rate</label>
+          <select id="sdv-fps">
+            <option value="0">Off &mdash; saves CPU</option>
+            <option value="10">10 fps</option>
+            <option value="30">30 fps</option>
+            <option value="60">60 fps</option>
+          </select>
+          <button class="btn" id="sdv-set-fps">Apply</button>
+          <span class="hint">needed for the VNC console and screenshots</span>
+        </div>
+        <div class="picker">
+          <button class="btn" id="sdv-reload">Reload world</button>
+          <span class="hint">re-reads server-settings.json without a restart</span>
+        </div>
+      </div>
+
+      <div class="panel-head">
+        <h2>Live view</h2>
+        <span class="hint">only renders when the rate is above zero</span>
+      </div>
+      <div class="sdv-shot">
+        <button class="btn" id="sdv-shot-btn">Take screenshot</button>
+        <img id="sdv-shot-img" alt="" hidden>
+      </div>
     </div>
   </section>
 
