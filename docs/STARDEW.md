@@ -178,6 +178,8 @@ curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8091/status
 
 ### Lifecycle
 
+From a WSL shell (from PowerShell use `.\lantern.cmd` instead):
+
 ```bash
 cd stack
 ./lantern use stardew     # stops CS2 and Minecraft, starts the farm

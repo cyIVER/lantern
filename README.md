@@ -35,6 +35,22 @@ Named for a beacon on the LAN.
 | **[stack/README.md](stack/README.md)** | Bringing the stack up, installer gotchas, recovery. |
 | **[stack/bootstrap/README.md](stack/bootstrap/README.md)** | The automation scripts and the traps they encode. |
 
+### Running it from PowerShell
+
+`./lantern` is a bash script. PowerShell has no association for an
+extensionless file, so typing `./lantern stop` there does not run it -- Windows
+hands it to whatever opens unknown files, usually VS Code. Use the wrapper,
+which forwards into WSL with the working directory already set:
+
+```powershell
+.\lantern.cmd status
+.\lantern.cmd use minecraft
+.\lantern.cmd stop
+```
+
+Inside a WSL shell, `./lantern` works directly and the wrapper is unnecessary.
+
+
 ---
 
 ## What's running
