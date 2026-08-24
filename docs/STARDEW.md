@@ -96,6 +96,25 @@ code off the running game. Then in Stardew: **Co-op → Join → Enter invite co
 
 Everyone needs their own copy of Stardew Valley. There is no LAN exception.
 
+### You can play on the same Steam account the server uses
+
+Verified, not assumed. The server downloads and runs the game as
+`savagewarhead`, and that same account joined the farm as a farmhand while the
+server was running:
+
+```
+Accepted 76561199322943569 as farmhand 8688533760251720776
+```
+
+No "logged in elsewhere" prompt, no session conflict, and the server
+provisioned a second cabin automatically. Steam's single-session rule applies
+to interactive game sessions; the server authenticates for downloads and relay
+tickets, which is a different thing.
+
+So a second Steam account is **not** required. It remains an option if you would
+rather not have your main account's credentials in a `.env` at all, but that is
+a security preference, not a technical need.
+
 ---
 
 ## Controlling it
