@@ -3,8 +3,14 @@
 # Adapted from upstream's docker-compose.yml. Four deliberate differences:
 #
 #   1. No `build:` stanzas. Upstream builds steam-auth and discord-bot from
-#      source, which needs the whole repository cloned. All three images are
-#      published, so this pulls them and LANtern stays a small repo.
+#      source, which needs the whole repository cloned. Published images exist,
+#      so this pulls them instead and LANtern stays a small repo.
+#
+#      Note the pinned default. sdvd/server publishes a `latest` tag but
+#      sdvd/steam-service does NOT -- the only tags both images share are
+#      preview builds, which is presumably why upstream builds it from source.
+#      A matched pair is pinned rather than tracking the floating `preview`
+#      tag, which moves every day.
 #   2. Query port moved 27015 -> 27030. CS2 owns 27015 in Pelican.
 #   3. API port moved 8080 -> 8091. Wings owns 8080.
 #   4. ./mods mounted so SMAPI loads them, and memory capped so this cannot
@@ -19,7 +25,7 @@ name: lantern-stardew
 
 services:
   server:
-    image: sdvd/server:${IMAGE_VERSION:-latest}
+    image: sdvd/server:${IMAGE_VERSION:-1.5.0-preview.127}
     container_name: sdvd-server
     stdin_open: true
     tty: true
@@ -66,7 +72,7 @@ services:
     restart: unless-stopped
 
   steam-auth:
-    image: sdvd/steam-service:${IMAGE_VERSION:-latest}
+    image: sdvd/steam-service:${IMAGE_VERSION:-1.5.0-preview.127}
     container_name: sdvd-steam-auth
     stdin_open: true
     tty: true
@@ -94,7 +100,7 @@ services:
   # modpack-update CI posts with. Start it explicitly:
   #   docker compose --profile discord up -d
   discord-bot:
-    image: sdvd/discord-bot:${IMAGE_VERSION:-latest}
+    image: sdvd/discord-bot:${IMAGE_VERSION:-1.5.0-preview.127}
     container_name: sdvd-discord-bot
     profiles: [discord]
     environment:
