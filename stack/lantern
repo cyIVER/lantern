@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# lantern -- run exactly one game server at a time.
+#
+#   ./lantern status          what is up, and what it is costing
+#   ./lantern use cs2         stop everything else, start CS2
+#   ./lantern use minecraft   stop everything else, start Minecraft
+#   ./lantern stop            stop all game servers, leave the panel up
+#
+# This host has 31.8 GB. A modded Minecraft server wants 11 GB and its client
+# another 10 GB, on top of 6 GB for Windows and 1.5 GB for the stack itself.
+# There is no combination in which two game servers and a game client coexist,
+# so the constraint is enforced here rather than left as a habit -- habits are
+# not reliable at 2 AM.
+#
+# Run from stack/, inside Ubuntu WSL.
+set -uo pipefail
+cd "$(dirname "$0")" || exit 1
+
+# name -> the Pelican server it maps to
+declare -A GAMES=(
+  [cs2]="LANtern CS2"
+  [minecraft]="LANtern Minecraft"
+)
+
+c_dim=$'\033[2m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_bold=$'\033[1m'; c_off=$'\033[0m'
+
+tinker() {
+  docker compose exec -T panel php artisan tinker --execute="$1" 2>/dev/null | grep -vE '^\s*$'
+}
+
+power() {
+  tinker "
+    \$s = \App\Models\Server::where('name','$1')->first();
+    if (\$s) { app(\App\Repositories\Daemon\DaemonServerRepository::class)->setServer(\$s)->power('$2'); echo 'ok'; }
+    else { echo 'missing'; }
+  " >/dev/null
+}
+
+uuid_of() {
+  tinker "\$s = \App\Models\Server::where('name','$1')->first(); echo \$s ? \$s->uuid : '';" \
+    | tail -1 | tr -d '[:space:]'
+}
+
+mem_of() {
+  tinker "\$s = \App\Models\Server::where('name','$1')->first(); echo \$s ? \$s->memory : 0;" \
+    | tail -1 | tr -d '[:space:]'
+}
+
+state_of() {  # docker's view, which is the only one that reflects reality
+  local u="$1"
+  [ -z "$u" ] && { echo "absent"; return; }
+  docker inspect -f '{{.State.Status}}' "$u" 2>/dev/null || echo absent
+}
+
+host_free_gb() {
+  awk '/MemAvailable/ {printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo "?"
+}
+
+cmd_status() {
+  printf '\n%sGame servers%s\n' "$c_bold" "$c_off"
+  local anyup=0
+  for key in "${!GAMES[@]}"; do
+    local name="${GAMES[$key]}" u st mem
+    u=$(uuid_of "$name"); st=$(state_of "$u"); mem=$(mem_of "$name")
+    case "$st" in
+      running) printf '  %s%-10s RUNNING%s  %s  %s MiB\n' "$c_grn" "$key" "$c_off" "$name" "$mem"; anyup=1 ;;
+      absent)  printf '  %s%-10s not created%s\n' "$c_dim" "$key" "$c_off" ;;
+      *)       printf '  %s%-10s %-11s%s  %s\n' "$c_dim" "$key" "$st" "$c_off" "$name" ;;
+    esac
+  done
+  printf '\n  host memory available: %s GB\n' "$(host_free_gb)"
+  [ "$anyup" = "0" ] && printf '  %snothing is running -- ./lantern use <game>%s\n' "$c_dim" "$c_off"
+  printf '\n'
+}
+
+wait_stopped() {
+  local u="$1" name="$2"
+  for _ in $(seq 1 30); do
+    [ "$(state_of "$u")" != "running" ] && return 0
+    sleep 2
+  done
+  printf '  %swarning: %s did not stop within 60s%s\n' "$c_ylw" "$name" "$c_off"
+  return 1
+}
+
+cmd_stop_all() {
+  local except="${1:-}"
+  for key in "${!GAMES[@]}"; do
+    [ "$key" = "$except" ] && continue
+    local name="${GAMES[$key]}" u
+    u=$(uuid_of "$name")
+    if [ "$(state_of "$u")" = "running" ]; then
+      printf '  stopping %s\n' "$key"
+      power "$name" stop
+      wait_stopped "$u" "$key"
+    fi
+  done
+}
+
+cmd_use() {
+  local want="${1:-}"
+  if [ -z "${GAMES[$want]:-}" ]; then
+    printf 'unknown game: %s\n' "${want:-<none>}" >&2
+    printf 'choose one of: %s\n' "${!GAMES[*]}" >&2
+    exit 2
+  fi
+
+  local name="${GAMES[$want]}" u
+  u=$(uuid_of "$name")
+  if [ -z "$u" ]; then
+    printf '"%s" does not exist yet.\n' "$name" >&2
+    [ "$want" = "minecraft" ] && printf 'Create it with: bash bootstrap/setup-minecraft.sh\n' >&2
+    exit 1
+  fi
+
+  printf '\n'
+  cmd_stop_all "$want"
+
+  if [ "$(state_of "$u")" = "running" ]; then
+    printf '  %s is already running\n' "$want"
+  else
+    printf '  starting %s\n' "$want"
+    power "$name" start
+  fi
+
+  cmd_status
+}
+
+case "${1:-status}" in
+  status)  cmd_status ;;
+  use)     cmd_use "${2:-}" ;;
+  stop)    printf '\n'; cmd_stop_all ""; cmd_status ;;
+  *)
+    sed -n '2,16p' "$0" | sed 's/^# \?//'
+    exit 2
+    ;;
+esac

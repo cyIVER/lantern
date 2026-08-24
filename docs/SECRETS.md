@@ -49,6 +49,31 @@ The command prompts for the value and never echoes it. Verify with `gh secret li
 > The Minecraft egg reads this as a Pelican server variable, not from the egg
 > JSON. The egg definition is committed; the key is not.
 
+**Two things to know about how this key behaves.**
+
+Pelican writes every environment variable, including this one, in plaintext into
+the install log:
+
+```
+/var/log/pelican/install/<server-uuid>.log
+```
+
+That file stays on the host and is not in git, but it does mean the key is
+readable by anything that can read the Docker volumes. Rotate it if you ever
+share a log while debugging.
+
+Second: CurseForge keys are bcrypt-shaped and start `$2a$10$...`. Docker Compose
+parses `stack/.env` for its own interpolation and treats each `$` as a variable
+reference, so it prints warnings like:
+
+```
+warning: The "UhALWueg8PnCnsFIMXfxueGhBA" variable is not set.
+```
+
+Harmless — LANtern's scripts read the key with `grep` directly rather than
+through Compose, so the real value is passed through intact. Do not "fix" it by
+escaping the dollars as `$$`, which would corrupt what those scripts read.
+
 ---
 
 ## 2. Discord webhook URL

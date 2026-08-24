@@ -1,0 +1,139 @@
+name: modpack update
+
+# Watches CurseForge for a new stable All the Mods 10 release and opens a pull
+# request moving the pin. It never touches a running server.
+#
+# Why a PR and not an auto-update: the server and every client must run the
+# identical pack version. Nothing here can update your friends' machines, so an
+# unattended server upgrade does not remove coordination -- it forces it, at
+# whatever hour the cron fires, with everyone locked out until they notice.
+# Pack updates also add and REMOVE mods, and Minecraft resolves a missing mod by
+# deleting the affected blocks and items from the world on load. So: detect
+# automatically, announce automatically, merge deliberately.
+
+on:
+  schedule:
+    - cron: '17 14 * * 1'   # Mondays, 14:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+
+      - name: compare pinned version against CurseForge
+        id: check
+        env:
+          CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+        run: |
+          set +e
+          python tools/check-pack-update.py --github-output
+          rc=$?
+          # 0 = current, 10 = behind, anything else is a real error.
+          [ $rc -eq 0 ] || [ $rc -eq 10 ] || exit $rc
+
+      - name: move the pin
+        if: steps.check.outputs.behind == 'true'
+        env:
+          CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+        run: python tools/check-pack-update.py --write
+
+      - name: open a pull request
+        if: steps.check.outputs.behind == 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.check.outputs.latest_name }}
+          LATEST_ID: ${{ steps.check.outputs.latest_id }}
+          CURRENT_ID: ${{ steps.check.outputs.current_id }}
+          RELEASED: ${{ steps.check.outputs.latest_date }}
+        run: |
+          branch="pack-update/${LATEST_ID}"
+
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "branch $branch already exists -- a PR is already open"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add eggs/
+          git commit -m "Pin All the Mods 10 to ${LATEST}
+
+          Was file ${CURRENT_ID}, now ${LATEST_ID} (released ${RELEASED})."
+          git push -u origin "$branch"
+
+          url=$(gh pr create \
+            --title "Modpack update: ${LATEST}" \
+            --body "$(cat <<EOF
+          CurseForge published a newer stable release.
+
+          | | |
+          |---|---|
+          | Pinned | \`${CURRENT_ID}\` |
+          | Latest | \`${LATEST_ID}\` — ${LATEST} |
+          | Released | ${RELEASED} |
+
+          ### Before merging
+
+          Merging changes only the pin. Nothing moves until you re-run the
+          installer on the host, which is deliberate.
+
+          - [ ] Read the pack changelog for **removed** mods — those delete world content on load
+          - [ ] Back up the world: \`bash stack/bootstrap/backup.sh minecraft\`
+          - [ ] Tell everyone to update their Prism instance to the same version
+          - [ ] Reinstall on the host, then \`bash stack/bootstrap/setup-minecraft.sh --validate\`
+
+          Opened automatically by \`.github/workflows/pack-update.yml\`.
+          EOF
+          )")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: tell Discord
+        if: steps.check.outputs.behind == 'true' && steps.pr.outputs.created == 'true'
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          LATEST: ${{ steps.check.outputs.latest_name }}
+          LATEST_ID: ${{ steps.check.outputs.latest_id }}
+          RELEASED: ${{ steps.check.outputs.latest_date }}
+          PACK: ${{ steps.check.outputs.pack_name }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "no DISCORD_WEBHOOK_URL secret; skipping"; exit 0; fi
+
+          # The pack itself is ~1.1 GB and someone else's copyrighted work, so it
+          # is never attached. The manifest is metadata only, a couple of KB, and
+          # is all Prism needs to land on the right version.
+          jq -n --arg v "$LATEST" --arg id "$LATEST_ID" --arg d "$RELEASED" \
+                --arg p "$PACK" --arg u "$PR_URL" '{
+            username: "LANtern",
+            embeds: [{
+              title: ("New modpack version: " + $v),
+              url: $u,
+              description: "A pull request is open to move the server to this version. **Nothing has changed yet** — do not update your instance until it is announced here.",
+              color: 3447003,
+              fields: [
+                {name: "Pack",         value: $p,  inline: true},
+                {name: "File ID",      value: $id, inline: true},
+                {name: "Released",     value: $d,  inline: true}
+              ],
+              footer: {text: "lantern · pack-update"}
+            }]
+          }' > payload.json
+
+          curl -sS -X POST -H 'Content-Type: application/json' -d @payload.json "$WEBHOOK"
+          echo "notified"
+
+      - name: no update
+        if: steps.check.outputs.behind != 'true'
+        run: echo "Pinned version is current — nothing to do."

@@ -1,0 +1,136 @@
+name: validate
+
+# Runs on GitHub-hosted runners only. There is deliberately no self-hosted
+# runner: this repository is public, and a self-hosted runner would let anyone
+# execute code from a fork pull request on the machine that holds the game
+# worlds. Deploys stay local -- see docs/DECISIONS.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          fail=0
+          while IFS= read -r f; do
+            echo "── $f"
+            shellcheck -S warning "$f" || fail=1
+          done < <(find . -name '*.sh' -not -path './.git/*' | sort)
+          exit $fail
+
+      - name: no CRLF in shell scripts
+        # A single \r makes bash fail with an unreadable "command not found",
+        # and these files round-trip through Windows editors constantly.
+        run: |
+          bad=$(find . -name '*.sh' -not -path './.git/*' -exec grep -lU $'\r' {} + || true)
+          if [ -n "$bad" ]; then echo "CRLF found in:"; echo "$bad"; exit 1; fi
+          echo "all shell scripts are LF"
+
+  python:
+    name: python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+
+      - name: compile
+        run: python -m compileall -q eggs tools ui mcp
+
+      - name: ruff
+        run: |
+          pip install -q ruff
+          ruff check --select E9,F63,F7,F82,F401 eggs tools ui mcp
+
+  eggs:
+    name: eggs match their builders
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+
+      - name: rebuild and diff
+        # The egg JSON is generated. If someone edits it by hand the change is
+        # silently lost the next time a builder runs, so treat drift as a failure.
+        run: |
+          python eggs/build-egg.py
+          python eggs/build-mc-egg.py
+          if ! git diff --exit-code --stat eggs/; then
+            echo
+            echo "Egg JSON is out of sync with eggs/src/. Run the builders and commit."
+            exit 1
+          fi
+          echo "eggs are in sync"
+
+      - name: egg schema sanity
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          fail = False
+          for p in pathlib.Path("eggs").glob("lantern-*.json"):
+              e = json.loads(p.read_text(encoding="utf-8"))
+              for key in ("name", "uuid", "startup_commands", "config", "scripts", "variables"):
+                  if key not in e:
+                      print(f"{p.name}: missing {key}"); fail = True
+              done = json.loads(e["config"]["startup"]).get("done", "")
+              if not done:
+                  print(f"{p.name}: empty done-string -- Wings would never mark it running"); fail = True
+              if "__" in e["scripts"]["installation"]["script"]:
+                  leftover = [w for w in e["scripts"]["installation"]["script"].split() if w.startswith("__") and w.endswith("__")]
+                  if leftover:
+                      print(f"{p.name}: unreplaced placeholder {leftover}"); fail = True
+              print(f"{p.name}: ok ({len(e['variables'])} vars, done={done!r})")
+          sys.exit(1 if fail else 0)
+          PY
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: no broken relative links
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+          root = pathlib.Path(".")
+          broken = []
+          for md in root.rglob("*.md"):
+              if ".git" in md.parts:
+                  continue
+              for text, target in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", md.read_text(encoding="utf-8")):
+                  if target.startswith(("http://", "https://", "#", "mailto:")):
+                      continue
+                  path = (md.parent / target.split("#")[0]).resolve()
+                  if not path.exists():
+                      broken.append(f"{md}: [{text}]({target})")
+          for b in broken:
+              print("broken:", b)
+          print(f"{len(broken)} broken links")
+          sys.exit(1 if broken else 0)
+          PY
+
+      - name: no secrets committed
+        run: |
+          if git ls-files | grep -E '\.env$' | grep -v example; then
+            echo "a .env file is tracked"; exit 1
+          fi
+          # Values that must never appear in a public repo.
+          if git grep -nIE '(STEAM_PASSWORD|CURSEFORGE_API_KEY|DISCORD_WEBHOOK_URL)\s*=\s*["'"'"']?[A-Za-z0-9$./_-]{12,}' -- . ; then
+            echo "a real-looking secret is committed"; exit 1
+          fi
+          echo "no secrets found"
