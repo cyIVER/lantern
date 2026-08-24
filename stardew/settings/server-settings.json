@@ -1,0 +1,32 @@
+{
+  "Game": {
+    "FarmName": "Junimo",
+    "FarmType": 0,
+    "ProfitMargin": 1.0,
+    "StartingCabins": 1,
+    "SpawnMonstersAtNight": "auto",
+    "RemixBundles": false,
+    "RemixMines": false,
+    "CommunityCenterYear1": false,
+    "CabinLayoutNearby": false,
+    "UseLegacyRandom": false,
+    "RandomSeed": null,
+    "PetBreed": 1,
+    "PetName": "Apples",
+    "MushroomCave": true,
+    "BuyJoja": false
+  },
+  "Server": {
+    "MaxPlayers": 10,
+    "CabinStrategy": "CabinStack",
+    "SeparateWallets": false,
+    "ExistingCabinBehavior": "KeepExisting",
+    "VerboseLogging": false,
+    "AllowIpConnections": false,
+    "EnforceFarmhandOwnership": true,
+    "LobbyMode": "Shared",
+    "ActiveLobbyLayout": "default",
+    "AdminSteamIds": [],
+    "NetworkBroadcastPeriod": 1
+  }
+}

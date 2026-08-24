@@ -98,6 +98,53 @@ Everyone needs their own copy of Stardew Valley. There is no LAN exception.
 
 ---
 
+## Controlling it
+
+It is deliberately **not** in the Pelican panel. Pelican supervises a server
+process; there is no Stardew server process to supervise, only a whole game
+pretending to be one. Three surfaces instead.
+
+### VNC console — `http://192.168.0.115:5800`
+
+The actual running game. Log in with `VNC_PASSWORD` and you can watch the farm,
+drive the host character, and read the invite code off the screen.
+
+Set `SERVER_FPS` above 0 first or you get a black screen: rendering is disabled
+by default, because drawing frames nobody is watching is pure waste.
+
+### HTTP API — `http://192.168.0.115:8091`
+
+A real REST API, with an OpenAPI spec at `/swagger/v1/swagger.json`.
+
+| Route | Auth | Returns |
+|---|---|---|
+| `/health` | none | game-loop liveness: `gameAvailable`, `tickCount`, `isFrozen` |
+| `/status` | bearer | player count, max players, Steam and GOG invite codes, version |
+| `/players` | bearer | connected players |
+| `/settings` | bearer | farm name, farm type, profit margin, cabin count |
+| `/cabins` | bearer | cabin strategy and assignments |
+
+`/health` is intentionally open so a monitor can poll it. **Everything else
+returns 401 without the token** — which reads exactly like "not ready yet" if
+you forget the header, and cost an hour to notice while the invite code sat
+plainly in the log.
+
+```bash
+KEY=$(grep '^API_KEY=' stardew/.env | cut -d= -f2- | tr -d '"')
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8091/status
+```
+
+### Lifecycle
+
+```bash
+cd stack
+./lantern use stardew     # stops CS2 and Minecraft, starts the farm
+./lantern status
+bash bootstrap/setup-stardew.sh --validate
+```
+
+---
+
 ## Mods
 
 Drop mod folders into `stardew/mods/` and restart. SMAPI loads anything there.
