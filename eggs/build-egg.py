@@ -163,7 +163,9 @@ def main() -> int:
         v["sort"] = i + 1
     egg["variables"] = kept
 
-    OUT.write_text(json.dumps(egg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    # newline must be pinned: without it Windows writes CRLF, so a Linux
+    # rebuild differs on every line and CI's drift check can never pass.
+    OUT.write_text(json.dumps(egg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {OUT.name}  ({OUT.stat().st_size:,} bytes)")
     print(f"  startup:   {egg['startup_commands']['Default']}")
     print(f"  install:   {len(egg['scripts']['installation']['script']):,} chars")

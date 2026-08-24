@@ -194,7 +194,9 @@ def main() -> int:
         "variables": [dict(v, sort=i + 1) for i, v in enumerate(VARIABLES)],
     }
 
-    OUT.write_text(json.dumps(egg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    # newline must be pinned: without it Windows writes CRLF, so a Linux
+    # rebuild differs on every line and CI's drift check can never pass.
+    OUT.write_text(json.dumps(egg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {OUT.name}  ({OUT.stat().st_size:,} bytes)")
     print(f"  startup:   {egg['startup_commands']['Default']}")
     print(f"  done-str:  {json.loads(egg['config']['startup'])['done']!r}")

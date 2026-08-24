@@ -30,11 +30,11 @@ if [[ "${STEAM_USER}" == "" ]] || [[ "${STEAM_PASS}" == "" ]]; then
 fi
 
 say "Installing steamcmd"
-cd /tmp
+cd /tmp || exit 1
 mkdir -p "$SRV/steamcmd" "$SRV/steamapps"
 curl -sSL -o steamcmd.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz
 tar -xzf steamcmd.tar.gz -C "$SRV/steamcmd"
-cd "$SRV/steamcmd"
+cd "$SRV/steamcmd" || exit 1
 chown -R root:root /mnt
 export HOME=$SRV
 

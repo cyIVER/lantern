@@ -130,7 +130,10 @@ jobs:
             echo "a .env file is tracked"; exit 1
           fi
           # Values that must never appear in a public repo.
-          if git grep -nIE '(STEAM_PASSWORD|CURSEFORGE_API_KEY|DISCORD_WEBHOOK_URL)\s*=\s*["'"'"']?[A-Za-z0-9$./_-]{12,}' -- . ; then
-            echo "a real-looking secret is committed"; exit 1
+          # Placeholders are filtered out: docs/SECRETS.md has to show the shape
+          # of each value, so the literal variable names appear there by design.
+          hits=$(git grep -nIE '(STEAM_PASSWORD|CURSEFORGE_API_KEY|DISCORD_WEBHOOK_URL)[[:space:]]*=[[:space:]]*["'"'"']?[A-Za-z0-9$./_-]{12,}' -- .                  | grep -viE 'your-|change-me|example|placeholder|getenv|environ|[<{]' || true)
+          if [ -n "$hits" ]; then
+            echo "a real-looking secret is committed:"; echo "$hits"; exit 1
           fi
           echo "no secrets found"

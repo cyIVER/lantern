@@ -7,7 +7,7 @@
 #
 #   bash bootstrap/test-modes.sh [mode ...]     (default: all four, ends on competitive)
 set -uo pipefail
-cd /mnt/c/Users/iveri/Documents/code/lantern/stack
+cd /mnt/c/Users/iveri/Documents/code/lantern/stack || exit 1
 
 MODES=("$@")
 [ ${#MODES[@]} -eq 0 ] && MODES=(retakes practice deathmatch competitive)
