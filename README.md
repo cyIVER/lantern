@@ -29,6 +29,7 @@ Named for a beacon on the LAN.
 | **[CONTROL-UI.md](docs/CONTROL-UI.md)** | How the CS2 UI works, its API, and how to extend it. |
 | **[DECISIONS.md](docs/DECISIONS.md)** | Why it is built this way, and the Wings-on-Docker-Desktop proof. |
 | **[ROUTER-MCP.md](docs/ROUTER-MCP.md)** | Router tools for AI agents, plus the DHCP incident writeup. |
+| **[SECRETS.md](docs/SECRETS.md)** | Every key and secret: where it lives, how to create it, how to rotate it. |
 | **[stack/README.md](stack/README.md)** | Bringing the stack up, installer gotchas, recovery. |
 | **[stack/bootstrap/README.md](stack/bootstrap/README.md)** | The automation scripts and the traps they encode. |
 
