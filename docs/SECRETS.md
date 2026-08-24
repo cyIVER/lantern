@@ -163,7 +163,14 @@ git clone https://github.com/cyIVER/lantern.git && cd lantern
 cp stack/.env.example stack/.env
 $EDITOR stack/.env          # DB passwords, APP_URL, CURSEFORGE_API_KEY
 
-bash stack/bootstrap/create-ui-credentials.php   # generates ui/.env
+# Generates the UI's API key inside the panel container, then copies it out.
+# Run from stack/, inside Ubuntu WSL -- not Git Bash. It is a tinker script,
+# not a shell script, so it is piped into artisan rather than executed.
+cd stack
+docker compose exec -T panel php artisan tinker < bootstrap/create-ui-credentials.php
+docker compose cp panel:/tmp/lantern-ui.env ../ui/.env
+cd ..
+
 python -m mcp.router.set_password                # router, optional
 
 gh secret set CURSEFORGE_API_KEY
