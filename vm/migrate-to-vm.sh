@@ -149,6 +149,12 @@ if want repo; then
     | vm "tar -C $DST --numeric-owner -xf -" \
     || die 'repo copy failed'
 
+  # The Windows working tree is CRLF, and on Linux a CR is part of the token:
+  # shebangs become "bad interpreter" and DB_PASSWORD gains a trailing \r that
+  # makes authentication fail with a correct-looking password.
+  note 'normalising line endings'
+  vm "bash $DST/vm/normalize-line-endings.sh $DST 2>&1 | tail -4" || die 'normalisation failed'
+
   MISSING=0
   for f in stack/.env stack/.weaponpaints-db ui/.env stardew/.env \
            stack/compose.yml stardew/compose.yml; do
