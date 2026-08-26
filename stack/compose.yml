@@ -1,12 +1,15 @@
-# LANtern -- Pelican Panel + Wings on Docker Desktop (WSL2 backend)
+# LANtern -- Pelican Panel + Wings on Docker CE
 #
 # Adapted from pelican/panel compose-full-stack.yml and pelican/wings
 # docker-compose.example.yml. Changes from upstream are marked LANTERN.
 #
-# IMPORTANT: bring this up from INSIDE Ubuntu WSL, not Git Bash:
-#     cd /mnt/c/Users/iveri/Documents/code/lantern/stack
-#     docker compose up -d
-# Git Bash (MSYS) rewrites Linux paths and will corrupt the socket mount.
+# This runs on the `lantern` VM, not on Windows:
+#     ssh lantern
+#     cd /opt/lantern/stack && docker compose up -d
+#
+# There used to be a warning here about Git Bash corrupting the socket mount by
+# rewriting Linux paths. That hazard went away with WSL: there is no path
+# translation layer between this file and the daemon any more.
 
 services:
   database:

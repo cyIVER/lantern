@@ -11,7 +11,7 @@
 #
 # The generated plugin password is written to stack/.weaponpaints-db (gitignored).
 set -euo pipefail
-cd /mnt/c/Users/iveri/Documents/code/lantern/stack
+cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." || exit 1
 
 DB=cs2_weaponpaints
 USER=weaponpaints

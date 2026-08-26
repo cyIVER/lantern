@@ -14,15 +14,17 @@ WiFi. Nothing here is exposed to the internet and no port forwarding is involved
 
 That's the whole thing. No password, no mods to install, no Steam group.
 
-### Why it isn't in the server browser
+### The server browser
 
-The server runs in Docker behind WSL2's NAT, so the LAN broadcast that populates
-Steam's **LAN** tab never reaches other machines. The server is perfectly
-reachable — it just cannot announce itself. Typing the connect string is the
-supported path here, not a workaround for something broken.
+The server does not advertise itself in the public **Community** browser, by
+design: it runs `sv_lan 1` with no Game Server Login Token, so it is invisible
+outside your house.
 
-It also won't appear in the public **Community** browser, by design: it runs
-`sv_lan 1` with no Game Server Login Token, so it is invisible outside your house.
+Whether it shows up in Steam's **LAN** tab is **untested**. It used to be
+impossible — the server sat behind WSL2's NAT and the LAN broadcast never left
+the machine — and that obstacle is gone now that the stack runs on a bridged VM
+with its own address. Nobody has checked since. Typing the connect string always
+works, so that is what to send people.
 
 ### Make it one click for them
 
@@ -74,49 +76,48 @@ Have them run `ipconfig` (Windows) or `ifconfig` (Mac). Their address should sta
 `192.168.0.`. A `192.168.1.x` or `10.x` address means they are on a different
 router — a guest network, a phone hotspot, or a mesh node in isolation mode.
 
-**2. Is the server running?**
+**2. Is the VM up?**
+`192.168.0.115` belongs to the `lantern` VM, not to Windows. If nothing at all
+answers — not the panel, not the control UI, not ping — start it from Windows:
+
+```powershell
+VBoxManage startvm lantern --type headless
+```
+
+Nothing starts it automatically, so this is the normal state after a Windows
+reboot.
+
+**3. Is the server running?**
 Check the state pill at <http://192.168.0.115:8090>. If it says `offline`, hit
 **Start**. It takes ~40 seconds to report `running`.
 
-**3. Guest-network isolation.**
+**4. Guest-network isolation.**
 Many routers put guest WiFi on an isolated subnet that cannot see wired devices.
 Move them to the main WiFi.
-
-**4. Windows Firewall.**
-Docker Desktop installs inbound allow rules covering both the Private and Public
-profiles, so this normally just works. If it does not, the LAN is currently
-classified **Public**, which is the strictest profile. Reclassifying it as Private
-is correct for a home network — run elevated:
-
-```powershell
-Set-NetConnectionProfile -InterfaceAlias "Ethernet 5" -NetworkCategory Private
-```
-
-If you would rather add explicit rules than change the profile:
-
-```powershell
-New-NetFirewallRule -DisplayName "LANtern CS2"   -Direction Inbound -Action Allow `
-  -Protocol UDP -LocalPort 27015,27020 -RemoteAddress 192.168.0.0/24
-New-NetFirewallRule -DisplayName "LANtern CS2 TCP" -Direction Inbound -Action Allow `
-  -Protocol TCP -LocalPort 27015 -RemoteAddress 192.168.0.0/24
-New-NetFirewallRule -DisplayName "LANtern Web"   -Direction Inbound -Action Allow `
-  -Protocol TCP -LocalPort 80,8090 -RemoteAddress 192.168.0.0/24
-```
 
 **5. Version mismatch.**
 CS2 clients auto-update; the server validates against Steam on every boot. If Valve
 patched very recently and the server has not restarted since, restart it.
 
+Note what is **not** on this list any more: Windows Firewall, the Hyper-V firewall,
+port proxies. The VM is bridged onto the LAN and holds its own address, so its
+traffic never traverses the Windows network stack and nothing on Windows can block
+it. The VM's own firewall is Ubuntu's `ufw`, left inactive by the cloud image —
+check with `sudo ufw status` if you suspect otherwise. If a port is not answering,
+the service behind it is down.
+
 ---
 
-## Playing on the host machine
+## Playing on the Windows box
 
-You can play on `IVERSON_PC` itself — the server is a separate container and does
-not conflict with your game client. Connect to `192.168.0.115:27015` exactly like
-everyone else, or use `localhost:27015`.
+You can play on the Windows host itself — the server is in a VM and does not
+conflict with your game client. Connect to `192.168.0.115:27015` exactly like
+everyone else. `localhost:27015` does **not** work any more: localhost on Windows
+is no longer where the server lives.
 
-Budget roughly 8 GB RAM and a couple of cores for the server while you play. The
-i5-13600KF has 20 threads, so it comfortably does both.
+The VM holds 18 GB of the host's 32 GB and 12 of its 20 logical cores whenever it
+is running, whether or not a game server is up inside it. That is the budget you
+are playing around; power the VM off if you want the whole machine back.
 
 ---
 
@@ -124,39 +125,21 @@ i5-13600KF has 20 threads, so it comfortably does both.
 
 | | |
 |---|---|
-| Address | `192.168.0.115` — **static**, will not change across reboots |
+| Address | `192.168.0.115` — **static on the VM**, will not change across reboots |
 | Slots | 12 (bots fill empty spots and leave as humans join) |
 | Password | none |
 | VAC | on — normal Steam accounts, no bans from playing here |
 | Demos | every match auto-records to `game/csgo/replays/` |
 | Skins | `!ws`, `!knife`, `!gloves` in chat — everyone has everything |
 
+## UDP works now
 
-## Nobody outside this machine can connect
+Worth stating plainly, because for most of this project's life it did not. CS2
+gameplay is UDP on 27015, and under WSL2 it could not be published to the LAN at
+all: the NAT relay bound IPv6 loopback only, mirrored mode handed inbound traffic
+to a Hyper-V firewall that defaults to Block, and none of the workarounds covered
+UDP.
 
-If everything works on the host and nothing works from another machine, the
-cause is almost certainly the Hyper-V firewall rather than anything in LANtern.
-
-WSL running with `networkingMode=mirrored` shares the Windows network stack,
-and inbound traffic to it is then governed by the Hyper-V firewall, which
-defaults to blocking inbound while still permitting loopback. So
-`http://localhost:8090` answers instantly, `http://192.168.0.115:8090` times
-out, and every service looks healthy from where you are sitting.
-
-In an **elevated** PowerShell:
-
-```powershell
-cd C:\Users\iveri\Documents\code\lantern\stack\bootstrap
-.\open-lan-firewall.ps1
-```
-
-Then verify **from a different machine**. Testing from the host proves nothing,
-because loopback was never blocked in the first place.
-
-To check the current state:
-
-```powershell
-Get-NetFirewallHyperVVMSetting -PolicyStore ActiveStore
-```
-
-`DefaultInboundAction: Block` with no LANtern rules is the broken state.
+On the bridged VM there is nothing in the path. UDP 27015 has been reached from
+two separate machines on the LAN and gameplay works. If someone cannot connect,
+it is not this.

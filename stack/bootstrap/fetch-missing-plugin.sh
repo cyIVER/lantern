@@ -14,7 +14,7 @@ REPO="${1:?repo required}"
 PATTERN="${2:?asset filename substring required}"
 DEST="${3:?staging dir name required}"
 
-cd /mnt/c/Users/iveri/Documents/code/lantern/stack
+cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." || exit 1
 UUID=$(docker compose exec -T panel php artisan tinker \
   --execute='echo \App\Models\Server::where("name","LANtern CS2")->value("uuid");' 2>/dev/null \
   | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)

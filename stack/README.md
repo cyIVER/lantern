@@ -1,24 +1,14 @@
 # Pelican stack
 
-Panel + Wings + MariaDB + Redis on Docker Desktop (WSL2 backend).
+Panel + Wings + MariaDB + Redis on Docker CE, on the `lantern` VM.
 
 ## Bring up
 
-**Run from inside Ubuntu WSL, not Git Bash.** MSYS rewrites Linux paths and will
-mangle the docker socket mount.
-
-This can fail *silently*. `docker compose up -d --build ui` from Git Bash brings
-the container up looking healthy, but its `/var/lib/pelican/volumes` bind
-resolves into the wrong namespace and mounts an empty directory -- so the skin
-catalogue reads as zero items and the Loadout grids render blank, with no error
-anywhere. If the UI suddenly has no knives or skins, check this first:
+**Run this on the VM**, not on Windows:
 
 ```bash
-docker exec stack-ui-1 ls /volumes   # must list the server UUID, not nothing
-```
-
-```bash
-cd /mnt/c/Users/iveri/Documents/code/lantern/stack
+ssh lantern
+cd /opt/lantern/stack
 
 # One-time: the panel mounts a 'plugins' subpath of a volume that starts empty,
 # so the directory has to exist before the panel will start.
@@ -26,6 +16,19 @@ docker run --rm -v stack_pelican-data:/d alpine mkdir -p /d/plugins
 
 docker compose up -d
 docker compose ps
+```
+
+Docker here is **Docker CE from Docker's own apt repository** — not Docker
+Desktop. `/var/run/docker.sock`, the bind paths Wings hands the daemon, and the
+filesystem the compose file references are all the one Linux namespace, so there
+is no path-translation layer to get wrong.
+
+If the `ui` container comes up healthy but the Loadout grids render blank, its
+`/var/lib/pelican/volumes` bind is pointing at nothing. Check it directly rather
+than trusting the health state:
+
+```bash
+docker exec stack-ui-1 ls /volumes   # must list the server UUID, not nothing
 ```
 
 ## First run
@@ -96,7 +99,7 @@ docker compose ps
    | Daemon directory | `/var/lib/pelican/volumes` |
 
 3. **Install the Wings config** — the node page shows a generated `config.yml`.
-   Write it into Ubuntu WSL and restart Wings:
+   Write it onto the VM and restart Wings:
 
    ```bash
    sudo mkdir -p /etc/pelican
@@ -108,9 +111,23 @@ docker compose ps
    Until this exists Wings logs *"Configuration File Not Found"* — that is the
    expected state on a fresh stack, not a fault.
 
-4. **Autostart** — Docker Desktop → Settings → General → *Start Docker Desktop when
-   you sign in*. The compose services are `restart: unless-stopped`, so the panel
-   returns after a reboot while game servers stay off until you start them.
+4. **Autostart** — nothing to configure inside the VM. The compose services are
+   `restart: unless-stopped`, so the panel returns whenever the VM boots while
+   game servers stay off until you start them. Starting the VM itself is a
+   `VBoxManage startvm lantern --type headless` on Windows.
+
+5. **Host services** — once Wings has run at least once:
+
+   ```bash
+   bash ../vm/install-vm-services.sh
+   ```
+
+   This installs `lantern-dbnet.timer` and symlinks `lantern` onto `PATH`. The
+   timer re-attaches MariaDB to Wings' `pelican_nw` bridge every 60 seconds.
+   It cannot be a compose dependency: Wings creates that network itself, and only
+   once it starts, so an `external: true` reference fails on a machine where no
+   game server has ever run. Without it, WeaponPaints inside the CS2 container
+   cannot resolve `database` and every loadout silently reads as empty.
 
 ## Deltas from upstream
 
@@ -122,11 +139,14 @@ Taken from `pelican/panel` `compose-full-stack.yml` and `pelican/wings`
 | Dropped `build: .` on panel | We consume the published image, not a source build |
 | Port 80 only, no 443 | LAN-only, plain HTTP by decision |
 | `restart: unless-stopped` | Was `always`; matches the panel-only autostart decision |
-| Default subnet `172.22.0.0/16` | Upstream's `172.20.0.0/16` collides with `memory-system_default`; `172.26.x` is the WSL vSwitch |
+| Default subnet `172.22.0.0/16` | Upstream's `172.20.0.0/16` collided with `memory-system_default` on the old host; kept because Wings' own `pelican_nw` sits at `172.23.x` |
 | DB healthcheck + `depends_on: healthy` | Panel raced MariaDB on first boot |
 | Secrets from a gitignored `.env` | Upstream ships literal `NEEDSTOCHANGE` placeholders |
 
 ## Ports
+
+Every one of these is reachable directly from the LAN — the VM is bridged, so
+nothing on Windows forwards, proxies or filters them.
 
 | Port | Service |
 |---|---|

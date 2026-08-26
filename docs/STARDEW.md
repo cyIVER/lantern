@@ -28,8 +28,8 @@ it needs a Steam login, a VNC console, and 3 GB of memory to host a game about
 turnips.
 
 It also means this is **not a Pelican egg**. There is no server binary for
-Pelican to supervise, so it lives in its own compose project at `stardew/` and
-`stack/lantern` knows about it as a special case.
+Pelican to supervise, so it lives in its own compose project — `/opt/lantern/stardew`
+on the VM — and the `lantern` control script knows about it as a special case.
 
 ---
 
@@ -37,7 +37,10 @@ Pelican to supervise, so it lives in its own compose project at `stardew/` and
 
 ### 1. Fill in the environment
 
+On the VM (`ssh lantern`):
+
 ```bash
+cd /opt/lantern
 cp stardew/.env.example stardew/.env
 ```
 
@@ -77,7 +80,7 @@ less damaging than a password that also owns your library and your friends list.
 ### 4. Start and validate
 
 ```bash
-cd ../stack && bash bootstrap/setup-stardew.sh
+cd /opt/lantern/stack && bash bootstrap/setup-stardew.sh
 ```
 
 Idempotent. It refuses to run until the Steam login exists, and validates by
@@ -174,17 +177,17 @@ curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8091/status
 > Docker daemon, which is root-equivalent on the host. That is acceptable on a
 > LAN box you own and unacceptable if you ever forward the port. If you would
 > rather not accept it, drop the socket mount from `stardew/compose.yml` and
-> restart by hand with `./lantern use stardew` — everything else still works.
+> restart by hand with `lantern use stardew` — everything else still works.
 
 ### Lifecycle
 
-From a WSL shell (from PowerShell use `.\lantern.cmd` instead):
+On the VM (`ssh lantern`). `lantern` is symlinked onto `PATH`, so the directory
+does not matter:
 
 ```bash
-cd stack
-./lantern use stardew     # stops CS2 and Minecraft, starts the farm
-./lantern status
-bash bootstrap/setup-stardew.sh --validate
+lantern use stardew       # stops CS2 and Minecraft, starts the farm
+lantern status
+bash /opt/lantern/stack/bootstrap/setup-stardew.sh --validate
 ```
 
 ---
@@ -195,7 +198,13 @@ Officially supported, and the flag in step two is the part that matters.
 
 **1. Copy the save folder in.** Saves live at `%appdata%\StardewValley\Saves`
 on Windows, `~/.config/StardewValley/Saves` elsewhere, in a folder named
-`{FarmName}_{number}`. From the directory containing it:
+`{FarmName}_{number}`. It has to reach the VM first:
+
+```powershell
+scp -r "$env:APPDATA\StardewValley\Saves\YourFarm_123456789" lantern:~/
+```
+
+Then, on the VM, from the directory containing it:
 
 ```bash
 docker run --rm -v lantern-stardew_saves:/sv -v "$(pwd)":/backup \
@@ -220,7 +229,8 @@ local single-player or co-op game.
 
 ## Mods
 
-Drop mod folders into `stardew/mods/` — SMAPI loads anything there. Enable
+Drop mod folders into `/opt/lantern/stardew/mods/` on the VM — `scp -r` them
+across from Windows — and SMAPI loads anything there. Enable
 and disable them from the control UI, which renames the folder with a leading
 dot; that is how SMAPI skips a mod, and it means a human reading the folder
 sees the same truth the UI does.
@@ -278,16 +288,17 @@ sounds.
 ## Running it
 
 ```bash
-cd stack
-./lantern use stardew      # stops CS2 and Minecraft, starts the farm
-./lantern status
+ssh lantern
+lantern use stardew        # stops CS2 and Minecraft, starts the farm
+lantern status
 ```
 
-One game server at a time is enforced, not just suggested. Stardew is cheap
-compared to Minecraft — 3 GB against 11.5 GB — but the rule is uniform.
+One game server at a time is enforced, not just suggested. Everything shares the
+VM's ~17 GB usable. Stardew is cheap compared to Minecraft — 3 GB against
+11.5 GB — but the rule is uniform.
 
 ```bash
-cd stardew
+cd /opt/lantern/stardew
 docker compose logs -f server        # follow
 docker compose --profile discord up -d   # optional Discord bot
 ```
@@ -333,13 +344,25 @@ supports, the fix is to move to `preview`, not to wait.
 
 ## Backups
 
+Saves live in the `lantern-stardew_saves` Docker volume, which is inside the VM's
+virtual disk. So the point of a backup is to get a copy **off that disk** — one
+corrupted disk image should not take the farm and every backup of it at once.
+
+`backup.sh` still defaults its destination to `/mnt/e/lantern-backups`, which was
+the Windows E: drive seen through WSL and does not exist on the VM. Give it a
+destination explicitly:
+
 ```bash
-bash bootstrap/backup.sh stardew
+LANTERN_BACKUP_DIR=/var/backups/lantern bash bootstrap/backup.sh stardew
 ```
 
-Saves live in the `saves` Docker volume, which is inside the WSL `.vhdx`.
-Backups are written to **E:** on purpose — a corrupted `.vhdx` would otherwise
-take the farm and every backup of it at the same time.
+That writes to the VM's own disk, which satisfies "a backup exists" and not "the
+backup survives losing the VM". Copying the result back to Windows afterwards is
+the part that is currently manual:
+
+```powershell
+scp lantern:/var/backups/lantern/stardew-*.tar.zst E:\lantern-backups\
+```
 
 ---
 

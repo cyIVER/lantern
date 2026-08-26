@@ -9,7 +9,7 @@
 #
 # Existing entries are preserved -- this merges, it does not overwrite.
 set -euo pipefail
-cd /mnt/c/Users/iveri/Documents/code/lantern/stack
+cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." || exit 1
 
 STEAMID="${1:?steamid64 required}"
 NAME="${2:?display name required}"

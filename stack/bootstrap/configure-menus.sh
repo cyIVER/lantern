@@ -20,7 +20,7 @@
 #      (different mechanism), so the symptom is a correct knife with no skin and
 #      no in-game error -- the exception only appears in the server log.
 set -euo pipefail
-cd /mnt/c/Users/iveri/Documents/code/lantern/stack
+cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." || exit 1
 
 CREDS=.weaponpaints-db
 [ -f "$CREDS" ] || { echo "missing $CREDS -- run setup-weaponpaints-db.sh first"; exit 1; }

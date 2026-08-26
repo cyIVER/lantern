@@ -157,13 +157,24 @@ Source 2 `.vsvg_c` files are a thin binary wrapper around plain SVG text, so the
 markup comes out with a byte scan; no ValveResourceFormat or .NET decompiler
 needed. All 25 map icons extract cleanly.
 
-They are **not committed** (game assets). Regenerate after a fresh clone:
+They are **not committed** (game assets). Regenerate after a fresh clone, on a
+machine with CS2 installed:
 
 ```bash
 cd ui && uv run extract-map-icons.py
 ```
 
 Pass `--vpk` if CS2 is not at the default path.
+
+The stack runs on the `lantern` VM, which has no CS2 *client* install — so run the
+extractor on Windows and copy the result across:
+
+```powershell
+scp ui\static\maps\*.svg lantern:/opt/lantern/ui/static/maps/
+```
+
+Whether the extractor can read the icons out of the dedicated server's own game
+files on the VM is untested.
 
 ---
 
@@ -219,12 +230,14 @@ ui/
   extract-map-icons.py   the extractor
 ```
 
+On the VM:
+
 ```bash
-cd stack && docker compose up -d --build ui
+cd /opt/lantern/stack && docker compose up -d --build ui
 docker compose logs ui --tail 30
 ```
 
-Credentials come from `ui/.env` (gitignored), regenerable with:
+Credentials come from `ui/.env` (gitignored), regenerable from `/opt/lantern/stack`:
 
 ```bash
 docker compose exec -T panel php artisan tinker < bootstrap/create-ui-credentials.php
@@ -235,5 +248,8 @@ docker compose cp panel:/tmp/lantern-ui.env ../ui/.env
 
 Open by design — see [CONNECTING.md](CONNECTING.md). If you want it gated, the
 smallest change is a reverse proxy with basic auth in front of `:8090`, or bind
-the published port to `127.0.0.1` in `stack/compose.yml` so it is reachable only
-from the host.
+the published port to `127.0.0.1` in `stack/compose.yml`.
+
+Note what `127.0.0.1` means now: the VM's loopback, reachable only from a shell on
+the VM. It is no longer "the machine you are sitting at" — that would want an ssh
+tunnel, `ssh -L 8090:127.0.0.1:8090 lantern`.

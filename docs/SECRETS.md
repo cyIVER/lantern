@@ -7,9 +7,13 @@ lives in exactly one of three places:
 
 | Store | Used by | Why there |
 |---|---|---|
-| Gitignored `.env` file | Docker Compose, the control UI | Read at container start; never leaves the host |
+| Gitignored `.env` file on the VM | Docker Compose, the control UI | Read at container start; never leaves the VM |
 | GitHub Actions secret | CI workflows | Encrypted at rest, not exposed to fork pull requests |
 | Windows Credential Manager | Router MCP server | DPAPI-encrypted; no plaintext on disk at all |
+
+The `.env` files live under `/opt/lantern` on the `lantern` VM. The router MCP
+server is the exception that still runs on Windows, which is why its password
+lives in a Windows store.
 
 A quick way to prove nothing leaked before you push:
 
@@ -32,7 +36,7 @@ detect new pack releases.
 
 CurseForge's terms forbid redistributing the key, so it never enters git.
 
-**Put it in two places.** Locally, in `stack/.env`:
+**Put it in two places.** On the VM, in `/opt/lantern/stack/.env`:
 
 ```bash
 CURSEFORGE_API_KEY=$2a$10$your-key-here
@@ -114,7 +118,7 @@ curl -X POST -H 'Content-Type: application/json' -d '{"content":"LANtern webhook
 The Stardew dedicated server downloads the game you own, so it needs a Steam
 login. There is no way around this; it is why the game files can be fetched at all.
 
-`stardew/.env` (gitignored):
+`/opt/lantern/stardew/.env` on the VM (gitignored):
 
 ```bash
 STEAM_USERNAME=your-steam-login
@@ -122,11 +126,15 @@ STEAM_PASSWORD=your-steam-password
 VNC_PASSWORD=pick-something
 ```
 
-Then authenticate once, interactively — this prompts for your Steam Guard code:
+Then authenticate once, interactively — this prompts for your Steam Guard code.
+Run it from an ssh session on the VM, in `/opt/lantern/stardew`:
 
 ```bash
 docker compose run --rm -it steam-auth setup
 ```
+
+It needs a TTY, so `ssh lantern` and run it there; `ssh lantern '...'` as a
+one-shot command will not give it one.
 
 **Rules:**
 
@@ -183,24 +191,31 @@ keyring is strongly preferred. See [ROUTER-MCP.md](ROUTER-MCP.md).
 
 ## Setting up a fresh clone
 
+On the VM (`ssh lantern`):
+
 ```bash
-git clone https://github.com/cyIVER/lantern.git && cd lantern
+git clone https://github.com/cyIVER/lantern.git /opt/lantern && cd /opt/lantern
 
 cp stack/.env.example stack/.env
 $EDITOR stack/.env          # DB passwords, APP_URL, CURSEFORGE_API_KEY
 
 # Generates the UI's API key inside the panel container, then copies it out.
-# Run from stack/, inside Ubuntu WSL -- not Git Bash. It is a tinker script,
-# not a shell script, so it is piped into artisan rather than executed.
+# It is a tinker script, not a shell script, so it is piped into artisan
+# rather than executed.
 cd stack
 docker compose exec -T panel php artisan tinker < bootstrap/create-ui-credentials.php
 docker compose cp panel:/tmp/lantern-ui.env ../ui/.env
 cd ..
 
-python -m mcp.router.set_password                # router, optional
-
 gh secret set CURSEFORGE_API_KEY
 gh secret set DISCORD_WEBHOOK_URL
+```
+
+On **Windows**, separately — the router MCP server runs there and keeps its
+password in Windows Credential Manager:
+
+```powershell
+python -m mcp.router.set_password                # optional
 ```
 
 ## If a secret leaks

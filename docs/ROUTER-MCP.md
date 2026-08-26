@@ -15,6 +15,11 @@ The original plan was LAN-only SSH. That is not possible on this hardware:
 The router's only management surface is HTTP/80 and HTTPS/443. This server speaks
 the same local API the TP-Link Tether app uses — no cloud, no TP-Link ID.
 
+> **This one still runs on Windows.** The game stack moved to the `lantern` VM;
+> the router MCP server did not, because it keeps the router password in Windows
+> Credential Manager and is driven by the agent tooling on the workstation. It
+> only needs to reach `192.168.0.1`, which any machine on the LAN can.
+
 ## Setup
 
 Store the router password once. You type it into a hidden prompt, so it never
@@ -49,7 +54,7 @@ All nine are marked `read_only_hint=True`.
 | `network_status` | WAN/LAN addressing, uptime, CPU/memory, radio state, client counts |
 | `list_devices` | Every connected client: MAC, IP, hostname, band, signal, throughput |
 | `dhcp_leases` | Active leases with remaining time |
-| `dhcp_reservations` | Static address bindings — e.g. confirming the game host holds `.115` |
+| `dhcp_reservations` | Static address bindings — e.g. checking what the `.115` reservation points at |
 | `ipv4_status` | WAN conn type, netmask, DNS, LAN subnet, DHCP server state |
 | `wifi_status` | Per-band SSID, radio state, encryption, channel (**passwords redacted**) |
 | `vpn_status` | OpenVPN / PPTP / IPSec state and client counts |
@@ -123,9 +128,9 @@ itself was fine throughout -- `Up`, `Connected`, 2.5 Gbps, DHCP enabled. The rou
 table showed the reservation *and* a stale dynamic lease for the same MAC/IP
 simultaneously.
 
-**Resolution: a static IP on Windows**, which is the better arrangement for a server
-host anyway. The reservation is deliberately left in place so the router will never
-hand `.115` to another device.
+**Resolution at the time: a static IP on Windows**, which was the better
+arrangement for a server host anyway. The reservation was deliberately left in
+place so the router would never hand `.115` to another device.
 
 ```powershell
 Set-NetIPInterface -InterfaceAlias "Ethernet 5" -Dhcp Disabled
@@ -134,6 +139,26 @@ New-NetIPAddress -InterfaceAlias "Ethernet 5" -IPAddress 192.168.0.115 `
     -PrefixLength 24 -DefaultGateway 192.168.0.1
 Set-DnsClientServerAddress -InterfaceAlias "Ethernet 5" -ServerAddresses 192.168.0.1
 ```
+
+### Where this stands after the move to the VM (2026-08-26)
+
+`192.168.0.115` is unchanged, but it is now held by the **`lantern` VM**, pinned
+in `/etc/netplan/50-cloud-init.yaml` with cloud-init's network management
+disabled. Windows is back on DHCP (currently `192.168.0.231`) and no longer holds
+a static address at all. The commands above are history, not instructions.
+
+The lesson survives intact, and applies to the VM as much as it did to Windows: a
+static address on the client, plus a reservation the router honours, is one
+arrangement — a reservation racing a live dynamic lease for the same MAC is a
+different and broken one.
+
+**One thing to check.** The `.115` reservation names the *Windows* NIC's MAC
+(`A0-36-BC-BA-5A-C3`). The VM's bridged adapter has a different one. The VM holds
+the address statically so it needs no lease, but the DHCP pool is
+`192.168.0.2-253` with no exclusions, so the router can still hand `.115` to some
+other device and cause a conflict. Whether the reservation has been re-pointed at
+the VM's MAC is not recorded here — `dhcp_reservations` will tell you, and the
+web UI is where you change it.
 
 ### Reservations cannot be deleted through this API
 

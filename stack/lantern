@@ -15,7 +15,11 @@
 #
 # Run from stack/, inside Ubuntu WSL.
 set -uo pipefail
-cd "$(dirname "$0")" || exit 1
+# readlink -f, not dirname "$0": this script is symlinked onto PATH as
+# /usr/local/bin/lantern, and dirname would give /usr/local/bin -- where there
+# is no compose.yml, so every panel lookup returns empty and the script
+# cheerfully reports that no servers exist.
+cd "$(dirname "$(readlink -f "$0")")" || exit 1
 
 # Pelican-managed servers, by the name Pelican knows them as.
 declare -A GAMES=(

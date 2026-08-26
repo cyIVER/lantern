@@ -18,7 +18,7 @@
 #
 # Also re-applies the gameinfo.gi patch, which steamcmd 'validate' reverts.
 set -euo pipefail
-cd /mnt/c/Users/iveri/Documents/code/lantern/stack
+cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." || exit 1
 
 UUID=$(docker compose exec -T panel php artisan tinker \
   --execute='echo \App\Models\Server::where("name","LANtern CS2")->value("uuid");' 2>/dev/null \

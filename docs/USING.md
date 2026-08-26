@@ -12,6 +12,10 @@ plumbing. Both drive the same server and stay in sync — see
 
 Friends joining? → [CONNECTING.md](CONNECTING.md)
 
+Anything that wants a shell runs on the `lantern` VM: `ssh lantern`, then
+`/opt/lantern/stack`. The `lantern` control script is on `PATH` there, so
+`lantern status` and `lantern use cs2` work from any directory.
+
 ---
 
 ## Change the mode or map
@@ -115,7 +119,7 @@ Choices persist per SteamID in the `cs2_weaponpaints` database.
 **Menus are chat menus**: type the number of the option you want. (They shipped
 as *button* menus — navigated with W/S and selected with E — which is why they
 looked unresponsive if you tried typing a number. Changed via
-`stack/bootstrap/configure-menus.sh`.)
+`bootstrap/configure-menus.sh`.)
 
 **Or skip the in-game menu entirely**: the control UI's **Loadout** tab assigns
 knives (with finishes), gloves and weapon skins to any player from the browser.
@@ -132,7 +136,8 @@ so every `!` command works.
 Add someone else:
 
 ```bash
-bash stack/bootstrap/add-admin.sh <steamid64> "<name>" [immunity]
+cd /opt/lantern/stack
+bash bootstrap/add-admin.sh <steamid64> "<name>" [immunity]
 ```
 
 It merges into `addons/counterstrikesharp/configs/admins.json` rather than
@@ -161,9 +166,11 @@ needs no database of its own.
   Startup variables, or put permanent overrides in a separate cfg.
 - **Changing Mode needs a restart.** Map changes do not, if you use
   `changelevel` or the Maps tab.
-- **After a Windows reboot** the panel returns automatically via the "LANtern
-  startup" scheduled task, but **game servers stay off by design** — start them
-  from either UI.
+- **After a Windows reboot** nothing is running until you start the VM:
+  `VBoxManage startvm lantern --type headless` from any Windows shell. Once it
+  boots, the panel stack comes back on its own (`restart: unless-stopped`), but
+  **game servers stay off by design** — start them from either UI.
+- **After a VM reboot** the panel returns by itself; game servers still do not.
 - **Never drop a plugin's full archive into `addons/`.** Some ship their own
   Metamod, CounterStrikeSharp runtime, or the core `gamedata.json`, and will
   overwrite the platform with a stale copy. The staging normaliser strips these,
@@ -176,11 +183,11 @@ The symptom is that `!` commands do nothing and no error appears in game.
 Metamod or CounterStrikeSharp has failed to load, usually after a CS2 update.
 
 ```bash
-# what happened
+# what happened, on the VM
 docker logs <server-uuid> 2>&1 | grep -aE "MMS:|\[META\]|Failed to find signature"
 
 # fix: reinstall both, preserving the counterstrikesharp.vdf hook
-bash stack/bootstrap/repair-platform.sh
+cd /opt/lantern/stack && bash bootstrap/repair-platform.sh
 ```
 
 Then restart and confirm you get seven `Finished loading plugin` lines.

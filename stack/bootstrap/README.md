@@ -1,7 +1,16 @@
 # Bootstrap scripts
 
 Idempotent scripts that finish a Pelican install without clicking through the UI.
-Run them from inside Ubuntu WSL, from `stack/`.
+Run them on the VM (`ssh lantern`), from `/opt/lantern/stack`.
+
+> **Most of these still `cd` to the old Windows path.** They were written when the
+> repo lived at `/mnt/c/Users/iveri/Documents/code/lantern/stack` under WSL, and
+> that line is hardcoded near the top of `add-admin.sh`, `configure-menus.sh`,
+> `configure-weaponpaints.sh`, `cs2-status.sh`, `fetch-missing-plugin.sh`,
+> `install-wings-config.sh`, `push-boot-script.sh`, `repair-platform.sh`,
+> `setup-weaponpaints-db.sh` and `test-modes.sh`. On the VM that directory does
+> not exist, so they abort or run against nothing. Point them at
+> `/opt/lantern/stack` before relying on any of them.
 
 | Script | Purpose |
 |---|---|
@@ -10,8 +19,6 @@ Run them from inside Ubuntu WSL, from `stack/`.
 | `allocations.php` | Creates the CS2 / CSTV / Minecraft port allocations |
 | `create-cs2-server.php` | Creates the CS2 server (triggers the ~66 GB download) |
 | `create-ui-credentials.php` | API key + RCON details for the control UI |
-| `open-lan-firewall.ps1` | Hyper-V firewall rules so the LAN can reach the servers (elevated) |
-| `fix-ethernet.ps1` | Recover the I226-V NIC when it wedges and Windows falls back to Wi-Fi (elevated) |
 | `push-boot-script.sh` | Update `boot.sh` on a live server without reinstalling |
 | `repair-platform.sh` | Reinstall Metamod + CounterStrikeSharp when plugins go silent |
 | `fetch-missing-plugin.sh` | Stage one plugin into an installed server |
@@ -20,15 +27,44 @@ Run them from inside Ubuntu WSL, from `stack/`.
 | `cs2-status.sh` | Install / runtime progress |
 | `rotate-rcon.php` | Rotate the RCON password |
 | `setup-weaponpaints-db.sh` | Scoped MySQL database for skins |
-| `lantern-startup.ps1` | Logon startup sequencer (WSL → Docker → stack) |
+| `backup.sh` | Snapshot a game's volumes (see the note under **Backups** below) |
 
 ```bash
-cd /mnt/c/Users/iveri/Documents/code/lantern/stack
+cd /opt/lantern/stack
 docker compose exec -T panel php artisan tinker < bootstrap/create-node.php
 bash bootstrap/install-wings-config.sh
 docker compose restart wings
 docker compose exec -T panel php artisan tinker < bootstrap/allocations.php
 ```
+
+## The Windows-side script
+
+One PowerShell script is still live, and it is a **host** concern rather than a
+stack concern:
+
+| Script | Purpose |
+|---|---|
+| `fix-ethernet.ps1` | Recover the physical NIC when it wedges (elevated, on Windows) |
+
+The VM is bridged, which means its adapter rides the Windows host's physical NIC.
+A wedged NIC on Windows therefore still takes LANtern off the LAN even though
+nothing about the stack has changed. Nothing on Windows routes, forwards or
+filters LANtern traffic any more — but the cable still belongs to Windows.
+
+## Superseded by the move to the VM
+
+These exist in the tree and no longer have a purpose. They all solved problems
+created by running Docker inside WSL2, and a bridged VM does not have those
+problems. **Do not run them.**
+
+| Script | What it used to do | Why it is dead |
+|---|---|---|
+| `../lantern.cmd` | Forward `lantern` from PowerShell into WSL | `lantern` is on the VM's `PATH`; you reach it over ssh |
+| `publish-to-lan.ps1` | `netsh` portproxy from Windows into WSL's NAT | The VM has its own LAN address; nothing needs forwarding |
+| `open-lan-firewall.ps1` | Hyper-V firewall rules for the WSL vNIC | There is no WSL vNIC in the path any more |
+| `register-startup-task.ps1` | Register the logon sequencer | Nothing sequences at logon now |
+| `lantern-startup.ps1` | Logon sequencer: WSL → Docker Desktop → compose | The VM boots, systemd starts Docker, compose restarts itself |
+| `set-service-ip.ps1` | Pin `192.168.0.115` onto a Windows NIC | The VM holds `.115` statically via netplan; Windows is on DHCP |
 
 ## Gotchas these encode
 
@@ -37,12 +73,14 @@ in-memory instance does not have it yet. `getYamlConfiguration()` on that stale
 instance emits `uuid: null` and Wings refuses to start. Always `->fresh()` first;
 `install-wings-config.sh` also hard-aborts if the uuid is missing.
 
-**`/etc/pelican` needs root, but not `sudo`.** The path resolves into the Ubuntu WSL
-filesystem, and the Docker daemon runs as root, so a throwaway container with that
-path bind-mounted can write the config without a password prompt.
+**`/etc/pelican` needs root, but not `sudo`.** The Docker daemon runs as root, so
+a throwaway container with that path bind-mounted can write the config without a
+password prompt. On the VM you could equally `sudo tee` it; the container route
+just keeps the script working for anyone in the `docker` group.
 
-**Allocations bind `0.0.0.0`, aliased to `192.168.0.115`.** Docker Desktop publishes
-to every interface; the alias is what the panel displays to users.
+**Allocations bind `0.0.0.0`, aliased to `192.168.0.115`.** Docker publishes on
+every interface the VM has; the alias is what the panel displays to users, and it
+is now genuinely the address players reach.
 
 **`systemInformation()` caches for 360 seconds -- including failures.** If you query a
 node while Wings is still restarting, Docker's port proxy accepts the TCP connection
@@ -54,6 +92,22 @@ which looks exactly like a broken node. Clear it rather than debugging the netwo
 docker compose exec -T panel php artisan tinker \
   --execute='cache()->forget("nodes.1.system_information");'
 ```
+
+## Backups
+
+`backup.sh` still defaults its destination to `/mnt/e/lantern-backups`, which was
+the Windows E: drive seen through WSL. That path does not exist on the VM, so set
+the destination explicitly until the default is changed:
+
+```bash
+LANTERN_BACKUP_DIR=/var/backups/lantern bash bootstrap/backup.sh stardew
+```
+
+Where backups should ultimately live is unsettled. The old arrangement wrote them
+to E: precisely so that one corrupted disk image could not take the farm and every
+backup of it at the same moment, and the same reasoning applies to the VM's virtual
+disk. A destination off that disk is worth arranging; nothing does it automatically
+today.
 
 ---
 

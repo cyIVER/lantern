@@ -61,7 +61,7 @@ First join takes a minute or two while the client generates its mod registry.
 
 ## Running it
 
-Everything is scripted. From `stack/`, inside Ubuntu WSL:
+Everything is scripted. On the VM (`ssh lantern`), from `/opt/lantern/stack`:
 
 ```bash
 bash bootstrap/setup-minecraft.sh
@@ -112,24 +112,41 @@ docker compose exec -T panel php artisan tinker --execute="
 
 ## Memory, and why one server at a time
 
-The host has 31.8 GB. This pack is genuinely hungry:
+Two budgets now, because the server lives in a VM.
+
+**Inside the VM** — 18 GB assigned, about 17 GB usable:
 
 ```
- 6.0 GB   Windows and background apps
  1.5 GB   Pelican, Wings, MariaDB, Redis, the control UI
 11.0 GB   Minecraft server (10 GB heap + 1 GB JVM overhead)
-10.0 GB   your Minecraft client
 ───────
-28.5 GB   of 31.8
+12.5 GB   of ~17, before Ubuntu's own footprint
 ```
 
-That fits only because CS2 is stopped. Running both exceeds physical memory and
-Windows starts swapping, which feels like the whole machine breaking rather than
-one game being slow.
+CS2 wants 8 GB of that same pool, so the two do not fit together. `lantern use
+minecraft` stops CS2 first for exactly this reason.
+
+**On the Windows host** — 32 GB, of which the VM takes its full 18 GB for as long
+as it is running, whether or not a game server is up inside it:
+
+```
+18.0 GB   the lantern VM
+ 6.0 GB   Windows and background apps
+10.0 GB   your Minecraft client
+───────
+34.0 GB   of 31.8
+```
+
+That does not fit, and it is worth being blunt about: playing a heavily modded
+client on the same box that hosts the server is tighter than it was, because the
+VM's 18 GB belongs to the VM the whole time it is running rather than shrinking
+when the server inside it is idle. Windows starts swapping, which feels like the
+whole machine breaking rather than one game being slow. Close what you can, or
+lower `VM_RAM_MB` and the server heap together.
 
 The 1 GB of JVM headroom is not padding. Metaspace, code cache, GC structures
 and direct buffers all live outside `-Xmx`, and 485 mods carry a large class
-footprint. Exceed the container limit and the kernel OOM-kills the process with
+footprint. Exceed the container limit and the VM's kernel OOM-kills the process with
 no Java stack trace at all — a genuinely miserable thing to debug. Raise
 `JVM_HEADROOM_MB` if that ever happens.
 
