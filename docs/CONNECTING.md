@@ -130,3 +130,33 @@ i5-13600KF has 20 threads, so it comfortably does both.
 | VAC | on — normal Steam accounts, no bans from playing here |
 | Demos | every match auto-records to `game/csgo/replays/` |
 | Skins | `!ws`, `!knife`, `!gloves` in chat — everyone has everything |
+
+
+## Nobody outside this machine can connect
+
+If everything works on the host and nothing works from another machine, the
+cause is almost certainly the Hyper-V firewall rather than anything in LANtern.
+
+WSL running with `networkingMode=mirrored` shares the Windows network stack,
+and inbound traffic to it is then governed by the Hyper-V firewall, which
+defaults to blocking inbound while still permitting loopback. So
+`http://localhost:8090` answers instantly, `http://192.168.0.115:8090` times
+out, and every service looks healthy from where you are sitting.
+
+In an **elevated** PowerShell:
+
+```powershell
+cd C:\Users\iveri\Documents\code\lantern\stack\bootstrap
+.\open-lan-firewall.ps1
+```
+
+Then verify **from a different machine**. Testing from the host proves nothing,
+because loopback was never blocked in the first place.
+
+To check the current state:
+
+```powershell
+Get-NetFirewallHyperVVMSetting -PolicyStore ActiveStore
+```
+
+`DefaultInboundAction: Block` with no LANtern rules is the broken state.

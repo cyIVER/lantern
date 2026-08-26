@@ -132,6 +132,19 @@ Final layout — nothing game-related on C: any more:
   catalogue. Verify with `docker exec stack-ui-1 ls /volumes`.
 - Bind-mount targets are auto-created by the daemon, so no `sudo mkdir` is needed
   for `/var/lib/pelican` and friends.
+- **WSL mirrored networking blocks the LAN, and hides it from you.** With
+  `networkingMode=mirrored` in `~/.wslconfig`, inbound traffic to WSL is policed
+  by the **Hyper-V** firewall -- a separate thing from the Windows firewall --
+  which defaults to `DefaultInboundAction: Block` with `LoopbackEnabled: True`.
+  Everything therefore works perfectly from the host and not at all from
+  anywhere else, and you do not find out until a friend tries to connect.
+  `stack/bootstrap/open-lan-firewall.ps1` adds one narrow allow rule per port.
+  Diagnose with:
+
+  ```powershell
+  Get-NetFirewallHyperVVMSetting -PolicyStore ActiveStore
+  Test-NetConnection 192.168.0.115 -Port 80   # from the host, and from a laptop
+  ```
 
 ---
 
