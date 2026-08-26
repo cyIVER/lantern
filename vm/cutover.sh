@@ -177,7 +177,7 @@ step 'Verify'
 note 'watching from Windows -- WSL cannot see the LAN during this'
 
 UP=0
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   winping "$TO" || continue
   [ "$(ps1 "(& 'C:\\Windows\\System32\\OpenSSH\\ssh.exe' -i (wsl.exe wslpath -w '$KEY') -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o LogLevel=ERROR $VM_USER@$TO hostname)")" = "$VM_NAME" ] || continue
   UP=1; break
