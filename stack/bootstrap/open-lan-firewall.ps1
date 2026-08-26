@@ -48,14 +48,18 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# -LocalPorts must be an ARRAY here. Unlike New-NetFirewallRule, the Hyper-V
+# variant will not parse '27015,27020' and fails with "The port is invalid."
 $rules = @(
-    @{ Name = 'LANtern-Panel';      Proto = 'TCP'; Ports = '80';          What = 'Pelican panel' }
-    @{ Name = 'LANtern-CS2-UI';     Proto = 'TCP'; Ports = '8090';        What = 'CS2 control UI' }
-    @{ Name = 'LANtern-Stardew-UI'; Proto = 'TCP'; Ports = '8092';        What = 'Stardew control UI' }
-    @{ Name = 'LANtern-Minecraft';  Proto = 'TCP'; Ports = '25565';       What = 'Minecraft' }
-    @{ Name = 'LANtern-CS2-TCP';    Proto = 'TCP'; Ports = '27015';       What = 'CS2' }
-    @{ Name = 'LANtern-CS2-UDP';    Proto = 'UDP'; Ports = '27015,27020'; What = 'CS2 + SourceTV' }
-    @{ Name = 'LANtern-VNC';        Proto = 'TCP'; Ports = '5800';        What = 'Stardew VNC console' }
+    @{ Name = 'LANtern-Panel';      Proto = 'TCP'; Ports = @('80');            What = 'Pelican panel' }
+    @{ Name = 'LANtern-CS2-UI';     Proto = 'TCP'; Ports = @('8090');          What = 'CS2 control UI' }
+    @{ Name = 'LANtern-Stardew-UI'; Proto = 'TCP'; Ports = @('8092');          What = 'Stardew control UI' }
+    @{ Name = 'LANtern-Minecraft';  Proto = 'TCP'; Ports = @('25565');         What = 'Minecraft' }
+    @{ Name = 'LANtern-CS2-TCP';    Proto = 'TCP'; Ports = @('27015');         What = 'CS2 (rcon, query)' }
+    # The one that actually carries gameplay. Source engine traffic is UDP, so
+    # without this CS2 is unreachable no matter what TCP is open.
+    @{ Name = 'LANtern-CS2-UDP';    Proto = 'UDP'; Ports = @('27015','27020'); What = 'CS2 gameplay + SourceTV' }
+    @{ Name = 'LANtern-VNC';        Proto = 'TCP'; Ports = @('5800');          What = 'Stardew VNC console' }
 )
 
 # --- elevation ------------------------------------------------------------
@@ -98,15 +102,40 @@ if ($vm) {
 Write-Host ''
 
 # --- apply ----------------------------------------------------------------
+$made = 0; $failed = @()
 foreach ($r in $rules) {
-    # Replace rather than skip, so changing a port here actually takes effect.
+    # Replace rather than skip, so editing a port here actually takes effect.
     try { Remove-NetFirewallHyperVRule -Name $r.Name -ErrorAction Stop | Out-Null } catch { }
 
-    New-NetFirewallHyperVRule -Name $r.Name -DisplayName $r.Name `
-        -Direction Inbound -VMCreatorId $VMCreatorId `
-        -Protocol $r.Proto -LocalPorts $r.Ports -Action Allow | Out-Null
+    $portList = ($r.Ports -join ',')
+    try {
+        New-NetFirewallHyperVRule -Name $r.Name -DisplayName $r.Name `
+            -Direction Inbound -VMCreatorId $VMCreatorId `
+            -Protocol $r.Proto -LocalPorts $r.Ports -Action Allow -ErrorAction Stop | Out-Null
+    } catch {
+        $failed += $r.Name
+        Write-Host ('  {0,-22} {1,-4} {2,-14} FAILED: {3}' -f $r.Name, $r.Proto, $portList,
+                    $_.Exception.Message.Split([Environment]::NewLine)[0]) -ForegroundColor Red
+        continue
+    }
 
-    '  {0,-22} {1,-4} {2,-14} {3}' -f $r.Name, $r.Proto, $r.Ports, $r.What
+    # Read it back. Announcing a rule that was not created is how you end up
+    # believing the LAN is open when it is not.
+    if (Get-NetFirewallHyperVRule -Name $r.Name -ErrorAction SilentlyContinue) {
+        $made++
+        Write-Host ('  {0,-22} {1,-4} {2,-14} {3}' -f $r.Name, $r.Proto, $portList, $r.What) -ForegroundColor Green
+    } else {
+        $failed += $r.Name
+        Write-Host ('  {0,-22} {1,-4} {2,-14} NOT PRESENT after creation' -f $r.Name, $r.Proto, $portList) -ForegroundColor Red
+    }
+}
+
+Write-Host ''
+Write-Host ('  {0} of {1} rules in place' -f $made, $rules.Count)
+if ($failed.Count) {
+    Write-Host ('  FAILED: ' + ($failed -join ', ')) -ForegroundColor Red
+    Write-Host '  The LAN is only partly open. Do not assume it works.' -ForegroundColor Red
+    exit 1
 }
 
 Write-Host ''
