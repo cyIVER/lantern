@@ -146,6 +146,27 @@ Final layout — nothing game-related on C: any more:
   Test-NetConnection 192.168.0.115 -Port 80   # from the host, and from a laptop
   ```
 
+- **Two interfaces on one subnet makes every service intermittently
+  unreachable.** The Intel I226-V in this box wedges: the link reports Up at
+  2.5 Gbps, full duplex, zero errors, and passes no traffic. Windows marks the
+  profile `NoTraffic` and falls back to Wi-Fi -- which sits on the *same*
+  192.168.0.0/24. With two routes at equal metric, replies leave by the wrong
+  interface and clients drop them, so the panel loads once and then does not.
+  It presents as a web-app bug and is a NIC bug.
+
+  Always identify the dead interface with a source-bound ping. Without `-S`
+  the packet can leave via the healthy adapter and prove nothing:
+
+  ```powershell
+  ping -S 192.168.0.115 -n 3 192.168.0.1   # Ethernet
+  ping -S 192.168.0.222 -n 3 192.168.0.1   # Wi-Fi
+  ```
+
+  `stack/bootstrap/fix-ethernet.ps1` pins the link to 1.0 Gbps -- the I226-V
+  wedges specifically on 2.5 Gbps negotiation, and the router is gigabit
+  anyway -- restarts the adapter, verifies, and only then offers to disable
+  Wi-Fi.
+
 ---
 
 # Plugin archives can destroy the platform

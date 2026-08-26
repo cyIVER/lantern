@@ -11,6 +11,7 @@ Run them from inside Ubuntu WSL, from `stack/`.
 | `create-cs2-server.php` | Creates the CS2 server (triggers the ~66 GB download) |
 | `create-ui-credentials.php` | API key + RCON details for the control UI |
 | `open-lan-firewall.ps1` | Hyper-V firewall rules so the LAN can reach the servers (elevated) |
+| `fix-ethernet.ps1` | Recover the I226-V NIC when it wedges and Windows falls back to Wi-Fi (elevated) |
 | `push-boot-script.sh` | Update `boot.sh` on a live server without reinstalling |
 | `repair-platform.sh` | Reinstall Metamod + CounterStrikeSharp when plugins go silent |
 | `fetch-missing-plugin.sh` | Stage one plugin into an installed server |
