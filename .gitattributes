@@ -1,0 +1,16 @@
+# Shell scripts, cloud-init YAML and egg JSON are consumed by Linux and by
+# Wings install containers. A stray CR breaks the shebang, and cloud-init
+# rejects "#cloud-config\r" outright -- so the whole tree is LF by default.
+* text=auto eol=lf
+
+# Except the things Windows runs.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+*.png binary
+*.jpg binary
+*.zip binary
+*.vmdk binary
+*.vdi binary
+*.iso binary

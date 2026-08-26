@@ -34,3 +34,6 @@ stack/startup.log
 ui/.env
 ui/.venv/
 ui/static/maps/*.svg
+
+# Handed-over credentials, delete after use
+stack/.scotland-login

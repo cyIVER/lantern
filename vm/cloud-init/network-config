@@ -1,0 +1,20 @@
+# Static from first boot. LANtern's whole world -- APP_URL, both control UIs,
+# the docs, every friend's connect line -- names one address, so the server must
+# come up on a known one rather than whatever DHCP feels like.
+#
+# 192.168.0.116 is TEMPORARY. Windows still holds .115 while the stack is being
+# migrated; the two swap in a single cutover at the end. Change the address
+# here, or with `vm/set-vm-ip.sh`, once Windows has let go of it.
+version: 2
+ethernets:
+  lan:
+    match:
+      name: "en*"
+    dhcp4: false
+    dhcp6: false
+    addresses: [192.168.0.116/24]
+    routes:
+      - to: default
+        via: 192.168.0.1
+    nameservers:
+      addresses: [192.168.0.1, 1.1.1.1]

@@ -20,9 +20,17 @@
   flipping DefaultInboundAction to Allow, which would expose every listening
   socket in the WSL VM to the LAN.
 
+  8080 (the Wings API) MUST be open, even though nothing outside this machine
+  needs to call it. Pelican does not reach Wings over localhost or the compose
+  network -- it uses the node's configured address, which is the LAN IP. So
+  panel -> Wings crosses this firewall like any other traffic. Block it and the
+  panel silently loses all control of every server: start and stop requests
+  time out after 5s with a cURL error nobody sees, servers simply never start,
+  and nothing in the logs says why. The browser's console websocket connects to
+  the same address, so it breaks too.
+
   Deliberately NOT opened:
     25575  Minecraft RCON     - a control channel; only the host needs it
-    8080   Wings API          - the panel talks to it locally
     8091   Stardew HTTP API   - the Stardew UI reaches it over the compose network
     3306   MariaDB            - never
     2022   Wings SFTP         - add it yourself if you want remote file access
@@ -60,6 +68,9 @@ $rules = @(
     # without this CS2 is unreachable no matter what TCP is open.
     @{ Name = 'LANtern-CS2-UDP';    Proto = 'UDP'; Ports = @('27015','27020'); What = 'CS2 gameplay + SourceTV' }
     @{ Name = 'LANtern-VNC';        Proto = 'TCP'; Ports = @('5800');          What = 'Stardew VNC console' }
+    # Not optional. The panel talks to Wings on the node's LAN address, so this
+    # is the control plane for every server, not an external-facing port.
+    @{ Name = 'LANtern-Wings';      Proto = 'TCP'; Ports = @('8080');          What = 'Wings API (panel -> daemon)' }
 )
 
 # --- elevation ------------------------------------------------------------

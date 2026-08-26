@@ -1,0 +1,103 @@
+#cloud-config
+# LANtern host. Built from the Ubuntu 26.04 cloud image by vm/build-lantern-vm.sh.
+# Placeholders @SSH_KEY@ and @PW_HASH@ are filled in at build time -- this file
+# is a template on purpose so no key or hash is ever committed.
+
+hostname: lantern
+fqdn: lantern.lan
+prefer_fqdn_over_hostname: false
+manage_etc_hosts: true
+
+users:
+  - name: iverson
+    gecos: LANtern admin
+    shell: /bin/bash
+    groups: [adm, sudo]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: false
+    passwd: "@PW_HASH@"
+    ssh_authorized_keys:
+      - "@SSH_KEY@"
+
+# Password login is kept on deliberately. This box has a VirtualBox serial
+# console and nothing else -- if the static address or the SSH key is ever
+# wrong, a password is the only way back in.
+ssh_pwauth: true
+disable_root: true
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - unzip
+  - rsync
+  - htop
+  - gnupg
+  - python3-venv
+
+write_files:
+  - path: /usr/local/sbin/lantern-firstboot.sh
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Installs Docker from Docker's own repository and leaves a marker that
+      # says, unambiguously, whether it worked. Everything is logged: a first
+      # boot that half-succeeds is otherwise invisible until the stack fails to
+      # come up hours later.
+      set -uo pipefail
+      exec > >(tee -a /var/log/lantern-firstboot.log) 2>&1
+      echo "=== lantern first boot: $(date -u +%FT%TZ) ==="
+
+      # unattended-upgrades grabs the apt lock on a fresh cloud image and holds
+      # it for minutes. Wait rather than race it.
+      for i in $(seq 1 60); do
+        fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+        echo "  apt lock held, waiting ($i/60)"; sleep 5
+      done
+
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        -o /etc/apt/keyrings/docker.asc || { echo "FAILED: docker gpg key"; exit 1; }
+      chmod a+r /etc/apt/keyrings/docker.asc
+
+      CODENAME=$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${CODENAME} stable" \
+        > /etc/apt/sources.list.d/docker.list
+      echo "  docker repo: ${CODENAME}"
+
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq || { echo "FAILED: apt update"; exit 1; }
+      apt-get install -y -qq docker-ce docker-ce-cli containerd.io \
+        docker-buildx-plugin docker-compose-plugin \
+        || { echo "FAILED: docker install"; exit 1; }
+
+      systemctl enable --now docker || { echo "FAILED: docker service"; exit 1; }
+      usermod -aG docker iverson
+
+      # Prove it, do not assume it. A running daemon that cannot actually run a
+      # container is a failure mode this stack has hit before.
+      docker run --rm hello-world >/dev/null 2>&1 \
+        && echo "  docker runs containers: YES" \
+        || { echo "FAILED: docker cannot run a container"; exit 1; }
+
+      install -d -o iverson -g iverson /opt/lantern
+      echo "$(date -u +%FT%TZ) ok $(docker --version)" > /var/lib/lantern-firstboot.ok
+      echo "=== LANTERN-FIRSTBOOT-OK ==="
+
+  - path: /etc/sysctl.d/99-lantern.conf
+    content: |
+      # Game servers open a lot of sockets and Docker adds a bridge per project.
+      net.ipv4.ip_unprivileged_port_start=80
+      fs.inotify.max_user_instances=1024
+      fs.inotify.max_user_watches=524288
+
+runcmd:
+  - [ sysctl, --system ]
+  - [ /usr/local/sbin/lantern-firstboot.sh ]
+
+final_message: "LANTERN-CLOUD-INIT-DONE after $UPTIME seconds"
