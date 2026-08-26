@@ -261,14 +261,42 @@ if want verify; then
   step 'Verify'
   FAIL=0
 
-  # Compare what arrived against what left, rather than trusting exit codes.
-  for v in stack_pelican-db stack_pelican-data lantern-stardew_saves; do
-    a=$(docker run --rm -v "$v":/v:ro "$HELPER" sh -c 'find /v -type f | wc -l' 2>/dev/null)
-    b=$(vm "docker run --rm -v '$v':/v:ro $HELPER sh -c 'find /v -type f | wc -l'" 2>/dev/null)
-    if [ -n "$a" ] && [ "$a" = "$b" ]; then
-      ok "$v: $a files on both sides"
+  # Assert that nothing was LOST, not that the two sides are identical. Once the
+  # target database has been started it legitimately has files the source does
+  # not -- ibtmp1 and ddl_recovery.log are created at startup -- and a strict
+  # equality check reports that healthy state as a failed migration.
+  for v in stack_pelican-db stack_pelican-data lantern-stardew_saves \
+           lantern-stardew_config lantern-stardew_steam-session; do
+    docker volume inspect "$v" >/dev/null 2>&1 || continue
+    a=$(mktemp); b=$(mktemp)
+    docker run --rm -v "$v":/v:ro "$HELPER" sh -c 'find /v -type f | sort' >"$a" 2>/dev/null
+    vm "docker run --rm -v '$v':/v:ro $HELPER sh -c 'find /v -type f | sort'" >"$b" 2>/dev/null
+    missing=$(comm -23 "$a" "$b" | wc -l)
+    extra=$(comm -13 "$a" "$b" | wc -l)
+    if [ "$missing" -eq 0 ] && [ -s "$a" ]; then
+      if [ "$extra" -gt 0 ]; then
+        ok "$v: all $(wc -l <"$a") files arrived (+$extra created by the running service)"
+      else
+        ok "$v: all $(wc -l <"$a") files arrived"
+      fi
     else
-      bad "$v: $a here, $b there"; FAIL=1
+      bad "$v: $missing files did not arrive"
+      comm -23 "$a" "$b" | head -5 | sed 's/^/      /'
+      FAIL=1
+    fi
+    rm -f "$a" "$b"
+  done
+
+  # The server directories are bind mounts, not volumes, and root owns them.
+  for pair in "CS2:$CS2_UUID" "Minecraft:$MC_UUID"; do
+    label="${pair%%:*}"; uuid="${pair##*:}"
+    s=$(docker run --rm -v /var/lib/pelican/volumes:/v:ro "$HELPER" \
+          sh -c "find /v/$uuid -type f 2>/dev/null | wc -l")
+    t=$(vm "sudo find /var/lib/pelican/volumes/$uuid -type f 2>/dev/null | wc -l")
+    if [ -n "$s" ] && [ "$s" -gt 0 ] && [ "$t" -ge "$s" ]; then
+      ok "$label: $t files on the VM (source has $s)"
+    else
+      bad "$label: $s files here, $t there"; FAIL=1
     fi
   done
 
@@ -276,12 +304,8 @@ if want verify; then
     || { bad 'wings config missing'; FAIL=1; }
 
   MC=$(vm "sudo du -sm /var/lib/pelican/volumes/$MC_UUID 2>/dev/null | cut -f1")
-  note "Minecraft dir on the VM: ${MC:-0} MB"
-  [ "${MC:-0}" -gt 500 ] && ok 'Minecraft looks complete' \
-    || { bad 'Minecraft looks short (expected ~1600 MB)'; FAIL=1; }
-
   CS=$(vm "sudo du -sm /var/lib/pelican/volumes/$CS2_UUID 2>/dev/null | cut -f1")
-  note "CS2 dir on the VM: ${CS:-0} MB"
+  note "on disk: Minecraft ${MC:-0} MB, CS2 ${CS:-0} MB"
 
   printf '\n'
   if [ "$FAIL" != 0 ]; then
