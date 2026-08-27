@@ -320,55 +320,16 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
   font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--gold);
 }
 
-
-/* ------------------------------------------------------------ game servers */
-.servers { display: flex; flex-direction: column; gap: 10px; }
-
-.server-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)),
-                     calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
-}
-.server-row.is-running { border-color: #2f6c50; }
-
-.server-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.server-id strong { font-size: 15px; letter-spacing: .02em; }
-.server-note { color: var(--dim); font-size: 12px; }
-
-.server-actions { display: flex; gap: 8px; }
-
-/* --------------------------------------------------------------- modal */
-.backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(6, 9, 12, .74);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 60;
-}
-.backdrop[hidden] { display: none; }
-
-.modal {
-  width: min(460px, calc(100vw - 32px));
-  padding: 22px 24px;
-  background: var(--panel);
-  border: 1px solid var(--line-hi);
-  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)),
-                     calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
-}
-.modal h3 {
-  margin: 0 0 10px;
-  font-size: 16px;
-  letter-spacing: .06em;
+/* Back to the LANtern landing page. The CS2 UI is reachable on its own URL, so
+   this is a convenience, not the only way out. */
+.homelink {
+  margin-left: 18px;
+  align-self: center;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 12px;
+  letter-spacing: .08em;
   text-transform: uppercase;
-  color: var(--gold);
+  white-space: nowrap;
 }
-.modal p { margin: 0 0 20px; color: var(--text); line-height: 1.5; }
-.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.homelink:hover { color: var(--gold); }

@@ -55,7 +55,12 @@ GAMES: dict[str, dict[str, Any]] = {
         "label": "Stardew Valley",
         "kind": "docker",
         # steam-auth first: the server waits on it for a Steam session.
-        "containers": ["sdvd-steam-auth", "sdvd-server", "sdvd-ui"],
+        "containers": ["sdvd-steam-auth", "sdvd-server"],
+        # sdvd-ui is the Stardew control UI. It is started with the game but
+        # never stopped with it: the LANtern landing page links to it, and a
+        # management UI that disappears whenever the thing it manages is off is
+        # a management UI you cannot use to turn that thing on.
+        "keep_up": ["sdvd-ui"],
         "note": "separate compose project",
     },
 }
@@ -185,6 +190,8 @@ async def status(game: str) -> dict[str, Any]:
 
     states = await asyncio.gather(*(_container_state(n) for n in spec["containers"]))
     main = states[spec["containers"].index("sdvd-server")]
+    # A missing sdvd-ui is not a reason to call the game unavailable; it only
+    # means the control UI link will not work until the game is started once.
     if "absent" in states:
         return {"id": game, "label": spec["label"], "note": spec["note"],
                 "state": "absent", "available": False,
@@ -237,7 +244,7 @@ async def start(game: str) -> None:
             raise RuntimeError(f"no server named {spec['panel_name']!r} in the panel")
         await _pelican_power(uuid, "start")
         return
-    for name in spec["containers"]:
+    for name in spec["containers"] + spec.get("keep_up", []):
         await _container_power(name, "start")
 
 

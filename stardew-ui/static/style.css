@@ -362,3 +362,14 @@ select:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
 code { font-family: Silkscreen, monospace; font-size: .82em; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Back to the LANtern landing page. This UI is reachable on its own URL, so
+   the link is a convenience rather than the only way out. It is resolved in JS
+   because the landing page is on a different port to this one. */
+.homelink {
+  color: var(--ink-soft, #7a6a52);
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.homelink:hover { text-decoration: underline; }

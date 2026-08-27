@@ -339,3 +339,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 init();
+
+// The LANtern landing page is served by the control service on 8090, not by
+// this one, so the href cannot be a plain relative path.
+const _home = document.getElementById('homelink');
+if (_home) _home.href = 'http://' + location.hostname + ':8090/';

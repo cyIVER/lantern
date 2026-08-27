@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LANtern</title>
+<link rel="stylesheet" href="/static/shell.css">
+</head>
+<body>
+
+<!-- The LANtern landing page.
+     It owns two things and nothing else: which game is running, and where each
+     game's own UI lives. The game UIs are separate applications on their own
+     URLs, with their own themes -- this page links out to them rather than
+     wrapping them, and each of them carries a link back here. -->
+
+<header class="top">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <h1>LANtern</h1>
+      <p id="brand-sub">&mdash;</p>
+    </div>
+  </div>
+  <a class="toplink" id="link-panel" href="#" target="_blank" rel="noopener">Pelican panel &#8599;</a>
+</header>
+
+<main>
+  <section class="block">
+    <div class="blockhead">
+      <h2>Game servers</h2>
+      <span class="hint">one at a time</span>
+    </div>
+
+    <div id="server-list" class="servers"></div>
+
+    <p class="note">
+      Only one game runs at a time. CS2 is allocated 8&nbsp;GB and Minecraft
+      11&nbsp;GB on a machine with about 17&nbsp;GB usable, so running two would
+      not merely be slow &mdash; the kernel would kill one of them, usually
+      mid&#8209;save. Starting a game stops whatever is already up, and asks
+      before it does.
+    </p>
+  </section>
+
+  <section class="block">
+    <div class="blockhead">
+      <h2>Host</h2>
+      <span class="hint" id="host-sub">&mdash;</span>
+    </div>
+
+    <div class="gauges">
+      <div class="gauge" id="g-mem">
+        <label>Memory</label>
+        <div class="bar"><span></span></div>
+        <p class="gval">&mdash;</p>
+      </div>
+      <div class="gauge" id="g-disk">
+        <label>Disk</label>
+        <div class="bar"><span></span></div>
+        <p class="gval">&mdash;</p>
+      </div>
+      <div class="gauge" id="g-load">
+        <label>Load</label>
+        <div class="bar"><span></span></div>
+        <p class="gval">&mdash;</p>
+      </div>
+    </div>
+
+    <dl class="facts" id="host-facts"></dl>
+  </section>
+</main>
+
+<footer class="foot">
+  <span id="hostline">&mdash;</span>
+</footer>
+
+<div id="toast" class="toast"></div>
+
+<!-- Not window.confirm(): this has to name the server being stopped and say
+     what happens to the people connected to it, and a browser dialog cannot be
+     made to look as consequential as it is. -->
+<div id="confirm-backdrop" class="backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h3 id="confirm-title">Switch game server?</h3>
+    <p id="confirm-body"></p>
+    <div class="modal-actions">
+      <button class="btn" id="confirm-cancel">Cancel</button>
+      <button class="btn warn" id="confirm-ok">Stop it and start</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/shell.js"></script>
+</body>
+</html>

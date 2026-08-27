@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import loadout, presets, rcon, servers, watcher
+from . import host, loadout, presets, rcon, servers, watcher
 
 STATIC = pathlib.Path(__file__).parent.parent / "static"
 
@@ -609,8 +609,21 @@ async def servers_stop(game: str) -> dict[str, Any]:
     return {"ok": True, "stopped": game}
 
 
+@app.get("/api/host")
+async def host_health() -> dict[str, Any]:
+    return await host.snapshot()
+
+
+# The LANtern landing page is the root of this service; the CS2 control UI it
+# used to serve there now lives at /cs2. Both are plain pages on the same
+# origin, so the CS2 UI's own /api/... calls are unaffected by the move.
 @app.get("/")
 async def index() -> FileResponse:
+    return FileResponse(STATIC / "shell.html")
+
+
+@app.get("/cs2")
+async def cs2_ui() -> FileResponse:
     return FileResponse(STATIC / "index.html")
 
 
