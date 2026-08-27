@@ -16,6 +16,8 @@ def test_compose_publishes_only_minecraft_ui_and_keeps_viewer_private() -> None:
     assert viewer.get("ports") is None
     assert viewer["expose"] == ["4173"]
     assert viewer.get("depends_on") is None
+    assert set(minecraft_ui["networks"]) == {"minecraft-edge", "schematic-backplane"}
+    assert "default" not in minecraft_ui["networks"]
     assert compose["networks"]["schematic-backplane"]["internal"] is True
     assert compose["volumes"]["schematic-viewer-data"]["name"] == (
         "lantern-schematic-viewer-data"

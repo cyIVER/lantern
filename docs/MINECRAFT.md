@@ -14,12 +14,9 @@ Java 21, roughly 485 mods, pinned to one exact CurseForge release.
 | Server heap | 10 GB (11 GB container) |
 | Minecraft UI | `192.168.0.115:8093` — implemented here; deployment pending the release gate |
 
-> **Nobody has actually played on it.** The server installs, boots, loads the
-> world, answers RCON and accepts a TCP connection on 25565 — those are what
-> `--validate` checks — and its world is in the nightly backup. But no real
-> player has ever connected. Everything in "Joining" below is derived from the
-> pack's requirements, not from having watched someone do it. Treat the first
-> session as a test rather than as a party.
+> **Operational state rechecked 2026-08-26:** LANtern reported Minecraft
+> running. This gate did not re-verify a player joining from another LAN host,
+> so treat the next join as a connection test before relying on it for a party.
 
 Start and stop it from the **LANtern landing page**, <http://192.168.0.115:8090>,
 or with `lantern use minecraft` on the VM. Starting it stops whatever else is
@@ -169,6 +166,18 @@ private `schematic-viewer` container for a consistent volume snapshot. The
 public UI stays up, and neither Wings nor the running Minecraft server is
 stopped. The three UI/viewer secret files are included inside the mode-600
 `config.tgz` archive.
+
+Restore is deliberately explicit and replaces only the named schematic volume:
+
+```bash
+sudo /opt/lantern/vm/restore-schematic-library.sh \
+  /var/backups/lantern/<timestamp>/schematic-viewer-data.tgz \
+  --confirm-replace
+```
+
+The restore validates archive paths, creates a mode-600 pre-restore safety
+snapshot beside the selected archive, stops/restarts only `schematic-viewer`,
+and requires `/readyz` to recover. It never stops Wings or Minecraft.
 
 Details, including how to restore: [../vm/README.md](../vm/README.md).
 

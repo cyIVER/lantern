@@ -10,7 +10,6 @@ from typing import Protocol
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
-from starlette.background import BackgroundTask
 
 from .admin_session import AdminSessionAccess
 
@@ -183,16 +182,13 @@ async def _empty_body() -> AsyncIterable[bytes]:
         yield b""
 
 
-class UnavailableViewer:
-    async def exchange(self, _request: ProxyRequest) -> ProxyResponse:
-        async def message() -> AsyncIterable[bytes]:
-            yield b'{"detail":"schematic viewer is not configured"}'
-
-        return ProxyResponse(
-            status_code=503,
-            headers=[("content-type", "application/json")],
-            body=message(),
-        )
+async def _closing_body(response: ProxyResponse) -> AsyncIterable[bytes]:
+    try:
+        async for chunk in response.body:
+            yield chunk
+    finally:
+        if response.close:
+            await response.close()
 
 
 def _request_headers(request: Request) -> dict[str, str]:
@@ -271,10 +267,8 @@ def install_schematic_workspace(
         location = response_headers.get("location")
         if location and location.startswith("/"):
             response_headers["location"] = f"/schematics{location}"
-        background = BackgroundTask(upstream.close) if upstream.close else None
         return StreamingResponse(
-            upstream.body,
+            _closing_body(upstream),
             status_code=upstream.status_code,
             headers=response_headers,
-            background=background,
         )

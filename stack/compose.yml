@@ -150,7 +150,7 @@ services:
       - minecraft_session_secret
       - schematic_viewer_admin_token
     networks:
-      - default
+      - minecraft-edge
       - schematic-backplane
     read_only: true
     tmpfs:
@@ -235,6 +235,7 @@ networks:
         - subnet: 172.22.0.0/16
   schematic-backplane:
     internal: true
+  minecraft-edge:
   wings0:
     name: wings0
     driver: bridge

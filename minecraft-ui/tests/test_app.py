@@ -1,8 +1,10 @@
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
+import pytest
 from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 
@@ -64,6 +66,26 @@ class CompatibleViewer:
 class TimedOutViewer:
     async def exchange(self, _request: ProxyRequest) -> ProxyResponse:
         raise ViewerTimeout("private timeout detail")
+
+
+class ClosingFailingViewer:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def exchange(self, _request: ProxyRequest) -> ProxyResponse:
+        async def failing_body() -> AsyncIterator[bytes]:
+            yield b"partial"
+            raise RuntimeError("upstream stream failed")
+
+        async def close() -> None:
+            self.closed = True
+
+        return ProxyResponse(
+            status_code=200,
+            headers=[("content-type", "application/octet-stream")],
+            body=failing_body(),
+            close=close,
+        )
 
 
 def test_schematics_without_trailing_slash_redirects_permanently() -> None:
@@ -270,6 +292,42 @@ def test_failed_admin_logins_are_rate_limited_without_trusting_forwarded_ip(
     assert "set-cookie" not in blocked.headers
 
 
+def test_admin_login_rejects_oversized_body_before_json_parsing(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(viewer=RecordingViewer(), settings=_admin_settings(tmp_path))
+    ) as client:
+        response = client.post(
+            "/api/session/login",
+            headers={"Origin": "http://testserver"},
+            content=b"{" + b"x" * 4096,
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "login request is too large"}
+
+
+def test_admin_login_stream_limit_does_not_depend_on_content_length(
+    tmp_path: Path,
+) -> None:
+    async def send_chunked() -> httpx.Response:
+        transport = httpx.ASGITransport(
+            app=create_app(viewer=RecordingViewer(), settings=_admin_settings(tmp_path))
+        )
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            return await client.post(
+                "/api/session/login",
+                headers={"Origin": "http://testserver"},
+                content=_chunks(b'{"password":"', b"x" * 4096, b'"}'),
+            )
+
+    response = asyncio.run(send_chunked())
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "login request is too large"}
+
+
 def test_minecraft_home_exposes_overview_and_persistent_schematic_workspace() -> None:
     with TestClient(create_app(viewer=RecordingViewer())) as client:
         response = client.get("/")
@@ -338,3 +396,12 @@ def test_malformed_content_length_is_rejected_before_upstream() -> None:
 
     assert response.status_code == 400
     assert viewer.requests == []
+
+
+def test_upstream_is_closed_when_streaming_response_fails() -> None:
+    viewer = ClosingFailingViewer()
+    with pytest.raises(RuntimeError, match="upstream stream failed"):
+        with TestClient(create_app(viewer=viewer)) as client:
+            client.get("/schematics/")
+
+    assert viewer.closed is True

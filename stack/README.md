@@ -194,6 +194,16 @@ Never use `docker compose down` or `down -v` for this rollback. The named
 rollback has no effect on Wings or Minecraft; port 8093 merely disappears until
 the UI is released again.
 
+To restore a backed-up schematic library, use the guarded restore script. It
+validates the archive, creates a pre-restore safety copy, and replaces only the
+named viewer volume:
+
+```bash
+sudo /opt/lantern/vm/restore-schematic-library.sh \
+  /var/backups/lantern/<timestamp>/schematic-viewer-data.tgz \
+  --confirm-replace
+```
+
 ## Deltas from upstream
 
 Taken from `pelican/panel` `compose-full-stack.yml` and `pelican/wings`

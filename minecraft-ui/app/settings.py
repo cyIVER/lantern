@@ -34,4 +34,3 @@ class Settings:
             secure_cookie=os.environ.get("MINECRAFT_SECURE_COOKIE", "false").lower()
             in {"1", "true", "yes"},
         )
-

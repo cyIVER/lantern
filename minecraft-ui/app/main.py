@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .admin_session import AdminSessionAccess, LoginRateLimiter
 from .schematic_workspace import (
@@ -27,6 +27,30 @@ class LoginBody(BaseModel):
 
 
 STATIC = Path(__file__).parent.parent / "static"
+MAX_LOGIN_BODY_BYTES = 4 * 1024
+
+
+async def _read_login_body(request: Request) -> LoginBody:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            declared_length = int(content_length)
+        except ValueError as exc:
+            raise HTTPException(400, "invalid Content-Length") from exc
+        if declared_length < 0:
+            raise HTTPException(400, "invalid Content-Length")
+        if declared_length > MAX_LOGIN_BODY_BYTES:
+            raise HTTPException(413, "login request is too large")
+
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_LOGIN_BODY_BYTES:
+            raise HTTPException(413, "login request is too large")
+    try:
+        return LoginBody.model_validate_json(body)
+    except ValidationError as exc:
+        raise HTTPException(422, "invalid login request") from exc
 
 
 def create_app(
@@ -96,7 +120,7 @@ def create_app(
         return {"enabled": access.enabled, "authenticated": access.is_admin(request)}
 
     @app.post("/api/session/login", status_code=204)
-    async def login(request: Request, body: LoginBody, response: Response) -> None:
+    async def login(request: Request, response: Response) -> None:
         access.require_same_origin(request)
         if not access.enabled:
             raise HTTPException(503, "administrator login is not configured")
@@ -108,6 +132,7 @@ def create_app(
                 "too many failed login attempts",
                 headers={"Retry-After": str(retry_after)},
             )
+        body = await _read_login_body(request)
         if not access.verify_password(body.password):
             login_limiter.failed(client_host)
             raise HTTPException(401, "invalid administrator credentials")

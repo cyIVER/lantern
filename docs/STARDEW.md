@@ -355,7 +355,7 @@ docker compose --profile discord up -d   # optional Discord bot
 | HTTP API | 8080 | **8091** | Wings owns 8080 |
 | VNC | 5800 | 5800 | |
 | Game | 24642 | 24642 | |
-| Control UI | — | **8092** | Upstream has no such service. 8090 is the LANtern landing page and CS2 UI; 8093 is reserved for Minecraft's |
+| Control UI | — | **8092** | Upstream has no such service. 8090 is the LANtern landing page and CS2 UI; 8093 is the release-gated Minecraft UI |
 
 `setup-stardew.sh` fails the preflight if either reverts to the upstream value.
 

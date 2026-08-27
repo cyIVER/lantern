@@ -6,6 +6,8 @@ Entries are kept as they were written. Where a later decision overturned an
 earlier one, the earlier one is marked **superseded** and left in place — the
 reasoning that led to it is the part worth keeping, and deleting it would make
 the same ground look unexplored next time. The most recent entry is
+[2026-08-26: Minecraft UI owns the schematic boundary](#2026-08-26--minecraft-ui-owns-the-schematic-boundary).
+The prior infrastructure entry is
 [2026-08-26: the hypervisor trade, taken](#2026-08-26--the-hypervisor-trade-taken),
 written later the same day as
 [2026-08-26: a bridged VM replaces Docker-inside-WSL2](#2026-08-26--a-bridged-vm-replaces-docker-inside-wsl2)
@@ -75,7 +77,7 @@ Base: **Metamod:Source** + **CounterStrikeSharp**
 | Panel URL | `http://192.168.0.115` (port 80, plain HTTP, LAN-only) |
 | Panel auth | Admin (you) + **limited subusers** for trusted friends |
 | Autostart | **Panel stack only** (`restart: unless-stopped`); game servers started on demand from the UI |
-| Secrets | Generated into a git-ignored `.env` |
+| Secrets | **Partly superseded 2026-08-26.** Ordinary stack values remain in a git-ignored `.env`; Minecraft UI credentials use read-only files under git-ignored `stack/secrets/` so the shared viewer token never appears in environment inspection. |
 
 ## Known risks
 
@@ -619,3 +621,33 @@ proxies its power buttons to the same endpoint rather than driving Docker itself
 even though it holds the socket and could. A safety rule implemented twice is a
 safety rule that will eventually disagree with itself, and the way it would
 disagree is by starting Stardew without stopping CS2.
+
+# 2026-08-26 — Minecraft UI owns the schematic boundary
+
+Port `8093` is an always-on Minecraft product UI, not another game-lifecycle
+service. It remains available when Minecraft is stopped and owns the public
+shell, administrator session, same-origin policy, and `/schematics/` gateway.
+Pelican remains the console and file manager; the landing page remains the only
+owner of game power and the one-server-at-a-time rule.
+
+Create Schematic Viewer stays a separately released, remote-but-owned service.
+The Minecraft UI reaches it through a fixed HTTP adapter on the internal
+`schematic-backplane` network. Viewer port `4173` is never published. The
+gateway strips browser credentials and forwarding/trust headers, preserves
+streaming responses, and injects a file-mounted token only after validating the
+LANtern administrator session. This keeps the viewer reusable without copying
+its code into LANtern and keeps LANtern policy out of the viewer.
+
+Browsing, inspection, conversion, and downloads remain anonymous. Persistent
+library changes require a self-contained Minecraft administrator login because
+the existing LANtern game UIs intentionally have no reusable authentication
+seam. A partial secret configuration fails closed. The current plain-HTTP LAN
+cannot protect the cookie in transit; internet exposure requires HTTPS and a
+Secure cookie.
+
+The viewer and UI restart independently of the game. Library data lives in the
+named `lantern-schematic-viewer-data` volume and joins the nightly backup; the
+backup briefly stops only the private viewer for consistency. Deployment and
+rollback target only `minecraft-ui` and `schematic-viewer`, never Wings or the
+running game. Production deployment is blocked until the viewer has an
+immutable released image digest and the separate release gate approves it.

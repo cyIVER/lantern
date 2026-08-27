@@ -15,7 +15,8 @@ container.
 - `static/` is the accessible two-tab shell. The viewer remains mounted in an
   iframe when tabs change so an in-progress view is not discarded.
 
-Only `8093` is published. The viewer listens on `4173` inside the Compose-only
+Only `8093` is published. The UI is isolated from the main stack on its own
+`minecraft-edge` network. The viewer listens on `4173` inside the Compose-only
 `schematic-backplane` network and has no host binding.
 
 ## Development

@@ -50,6 +50,8 @@ fail() { bad "$*"; FAILED=$((FAILED + 1)); }
 # that sidecar back. This deliberately names only schematic-viewer: the
 # Minecraft game, Wings, and the public Minecraft UI are never stopped here.
 SCHEMATIC_VIEWER_WAS_RUNNING=false
+SCHEMATIC_VIEWER_STOPPED=false
+ALPINE_BACKUP_IMAGE='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 restart_schematic_viewer() {
   if [ "$SCHEMATIC_VIEWER_WAS_RUNNING" = true ]; then
     if docker compose start schematic-viewer >/dev/null 2>&1; then
@@ -140,17 +142,22 @@ if docker volume inspect "$SCHEMATIC_VOLUME" >/dev/null 2>&1; then
   SCHEMATIC_VIEWER_CONTAINER=$(docker compose ps -q schematic-viewer 2>/dev/null || true)
   if [ -n "$SCHEMATIC_VIEWER_CONTAINER" ] \
      && [ "$(docker inspect -f '{{.State.Running}}' "$SCHEMATIC_VIEWER_CONTAINER" 2>/dev/null)" = true ]; then
+    # Record restart intent before stop: EXIT recovery must also cover an
+    # interrupt while Docker is waiting for the container's grace period.
+    SCHEMATIC_VIEWER_WAS_RUNNING=true
     if docker compose stop schematic-viewer >/dev/null 2>&1; then
-      SCHEMATIC_VIEWER_WAS_RUNNING=true
+      SCHEMATIC_VIEWER_STOPPED=true
       note '  schematic-viewer stopped; Minecraft, Wings, and :8093 remain up'
     else
       fail '  schematic-viewer could not be stopped; refusing a live volume copy'
     fi
   fi
 
-  if [ "$SCHEMATIC_VIEWER_WAS_RUNNING" = true ] || [ -z "$SCHEMATIC_VIEWER_CONTAINER" ] \
+  if [ "$SCHEMATIC_VIEWER_STOPPED" = true ] || [ -z "$SCHEMATIC_VIEWER_CONTAINER" ] \
      || [ "$(docker inspect -f '{{.State.Running}}' "$SCHEMATIC_VIEWER_CONTAINER" 2>/dev/null)" != true ]; then
-    if docker run --rm -v "$SCHEMATIC_VOLUME":/v:ro alpine:3.20 \
+    if docker run --rm --network none --read-only --cap-drop ALL \
+       --security-opt no-new-privileges -v "$SCHEMATIC_VOLUME":/v:ro \
+       "$ALPINE_BACKUP_IMAGE" \
        tar -C /v -czf - . 2>/dev/null > "$OUT/schematic-viewer-data.tgz" \
        && [ -s "$OUT/schematic-viewer-data.tgz" ]; then
       ok "  schematic-viewer-data.tgz ($(du -h "$OUT/schematic-viewer-data.tgz" | cut -f1))"
