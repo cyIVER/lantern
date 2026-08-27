@@ -154,17 +154,25 @@ The repository contains the `minecraft-ui` service and its private
 section until the release gate has separately approved the viewer release,
 exact image digest, secret creation and VM cutover.
 
-The viewer image must be an immutable released GHCR reference, including its
-digest. Put the approved value in `stack/.env`; never deploy `latest` or a bare
-mutable version tag:
+The viewer image is hard-pinned in `compose.yml` to the independently verified
+v1.0.0 release index:
+
+```text
+ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:d8dcef565e7da6c7536b591cc9cbe0471637364ffc22ae40590cd2c0910484a3
+```
+
+Changing the viewer is a reviewed source change; `latest`, a bare mutable tag,
+or a runtime `.env` override cannot select a different image. Configure the
+LAN-only bind, secret-reader group, and secure-cookie policy in `stack/.env`:
 
 ```dotenv
-SCHEMATIC_VIEWER_IMAGE=ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:<approved-digest>
+LANTERN_MINECRAFT_UI_BIND_IP=192.168.0.115
 LANTERN_SECRET_GID=1000 # replace with the output of `id -g` on the VM
+MINECRAFT_SECURE_COOKIE=false # keep false until an HTTPS proxy is in place
 ```
 
 Create the three files as described in
-[../docs/SECRETS.md](../docs/SECRETS.md#6-minecraft-ui-and-schematic-library-secrets),
+[../docs/SECRETS.md](../docs/SECRETS.md#5-minecraft-ui-and-schematic-library-secrets),
 then deploy only the two new services:
 
 ```bash
@@ -173,8 +181,8 @@ docker compose pull schematic-viewer
 docker compose build minecraft-ui
 docker compose up -d --no-deps schematic-viewer minecraft-ui
 
-curl --fail http://127.0.0.1:8093/healthz
-curl --fail http://127.0.0.1:8093/readyz
+curl --fail http://192.168.0.115:8093/healthz
+curl --fail http://192.168.0.115:8093/readyz
 docker compose ps schematic-viewer minecraft-ui
 ```
 
@@ -182,9 +190,10 @@ This command does not recreate or restart Wings, the panel, the existing UI or
 the running Minecraft server. The Minecraft UI and schematic library use
 `restart: unless-stopped` and stay available independently of game power.
 
-For a viewer rollback, restore the previously approved digest in `.env`, pull
-it, and repeat the selective `up` command with `--force-recreate`. For an
-initial-release rollback, stop only the new services:
+For a viewer rollback, make a reviewed source change that restores the previous
+approved digest in `compose.yml`, pull it, and repeat the selective `up` command
+with `--force-recreate`. For an initial-release rollback, stop only the new
+services:
 
 ```bash
 docker compose stop minecraft-ui schematic-viewer
@@ -196,8 +205,9 @@ rollback has no effect on Wings or Minecraft; port 8093 merely disappears until
 the UI is released again.
 
 To restore a backed-up schematic library, use the guarded restore script. It
-validates the archive, creates a pre-restore safety copy, and replaces only the
-named viewer volume:
+requires the archive and SHA-256 companion under the approved backup root,
+validates the viewer's typed backup manifest before touching live data, creates
+an atomic pre-restore safety copy, and replaces only the named viewer volume:
 
 ```bash
 sudo /opt/lantern/vm/restore-schematic-library.sh \

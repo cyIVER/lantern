@@ -1,6 +1,7 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -25,12 +26,29 @@ async def _chunks(*values: bytes) -> AsyncIterator[bytes]:
 
 
 class RecordingViewer:
-    def __init__(self, *, extra_response_headers: list[tuple[str, str]] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        extra_response_headers: list[tuple[str, str]] | None = None,
+        protect_library_mutations: bool = False,
+    ) -> None:
         self.requests: list[ProxyRequest] = []
         self.extra_response_headers = extra_response_headers or []
+        self.protect_library_mutations = protect_library_mutations
 
     async def exchange(self, request: ProxyRequest) -> ProxyResponse:
         self.requests.append(request)
+        if (
+            self.protect_library_mutations
+            and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and request.path.startswith("/api/v1/library/")
+            and "x-lantern-schematic-admin" not in request.headers
+        ):
+            return ProxyResponse(
+                status_code=403,
+                headers=[("content-type", "application/json")],
+                body=_chunks(b'{"error":"administrator access required"}'),
+            )
         return ProxyResponse(
             status_code=206,
             headers=[
@@ -121,7 +139,7 @@ def test_schematic_workspace_preserves_path_query_binary_body_and_metadata() -> 
     assert "x-lantern-schematic-admin" not in forwarded.headers
 
 
-def _admin_settings(tmp_path: Path) -> Settings:
+def _admin_settings(tmp_path: Path, *, allow_insecure_admin: bool) -> Settings:
     password_hash = tmp_path / "admin-password-hash"
     session_secret = tmp_path / "session-secret"
     viewer_token = tmp_path / "viewer-token"
@@ -132,12 +150,112 @@ def _admin_settings(tmp_path: Path) -> Settings:
         admin_password_hash_file=password_hash,
         session_secret_file=session_secret,
         viewer_admin_token_file=viewer_token,
+        allow_insecure_admin=allow_insecure_admin,
     )
 
 
-def test_authenticated_admin_mutation_receives_private_viewer_token(tmp_path: Path) -> None:
-    viewer = RecordingViewer()
-    with TestClient(create_app(viewer=viewer, settings=_admin_settings(tmp_path))) as client:
+def test_plaintext_admin_is_disabled_by_default_while_anonymous_browsing_remains(
+    tmp_path: Path,
+) -> None:
+    viewer = RecordingViewer(protect_library_mutations=True)
+    settings = _admin_settings(tmp_path, allow_insecure_admin=False)
+
+    with TestClient(create_app(viewer=viewer, settings=settings)) as client:
+        session = client.get("/api/session")
+        login = client.post(
+            "/api/session/login",
+            headers={"Origin": "http://testserver"},
+            json={"password": "correct horse battery staple"},
+        )
+        browse = client.get("/schematics/api/v1/library/schematics")
+        mutation = client.post(
+            "/schematics/api/v1/library/schematics",
+            headers={"Origin": "http://testserver"},
+            content=b"{}",
+        )
+
+    assert session.json() == {"enabled": False, "authenticated": False}
+    assert login.status_code == 503
+    assert login.json() == {"detail": "administrator login is disabled"}
+    assert "set-cookie" not in login.headers
+    assert browse.status_code == 206
+    assert mutation.status_code == 403
+    assert len(viewer.requests) == 2
+    assert "x-lantern-schematic-admin" not in viewer.requests[-1].headers
+
+
+def test_plaintext_default_rejects_a_previously_signed_admin_cookie(tmp_path: Path) -> None:
+    permitted = _admin_settings(tmp_path, allow_insecure_admin=True)
+    with TestClient(create_app(viewer=RecordingViewer(), settings=permitted)) as client:
+        login = client.post(
+            "/api/session/login",
+            headers={"Origin": "http://testserver"},
+            json={"password": "correct horse battery staple"},
+        )
+        signed_cookie = client.cookies["lantern_minecraft_admin"]
+
+    viewer = RecordingViewer(protect_library_mutations=True)
+    locked = replace(permitted, allow_insecure_admin=False)
+    with TestClient(create_app(viewer=viewer, settings=locked)) as client:
+        client.cookies.set("lantern_minecraft_admin", signed_cookie)
+        session = client.get("/api/session")
+        mutation = client.post(
+            "/schematics/api/v1/library/schematics",
+            headers={"Origin": "http://testserver"},
+            content=b"{}",
+        )
+
+    assert login.status_code == 204
+    assert session.json() == {"enabled": False, "authenticated": False}
+    assert mutation.status_code == 403
+    assert "x-lantern-schematic-admin" not in viewer.requests[-1].headers
+
+
+def test_secure_cookie_configuration_enables_admin_without_insecure_override(
+    tmp_path: Path,
+) -> None:
+    viewer = RecordingViewer(protect_library_mutations=True)
+    settings = replace(
+        _admin_settings(tmp_path, allow_insecure_admin=False), secure_cookie=True
+    )
+    with TestClient(
+        create_app(viewer=viewer, settings=settings), base_url="https://testserver"
+    ) as client:
+        login = client.post(
+            "/api/session/login",
+            headers={"Origin": "https://testserver"},
+            json={"password": "correct horse battery staple"},
+        )
+        mutation = client.post(
+            "/schematics/api/v1/library/schematics",
+            headers={"Origin": "https://testserver"},
+            content=b"{}",
+        )
+
+    assert login.status_code == 204
+    assert "Secure" in login.headers["set-cookie"]
+    assert mutation.status_code == 206
+    assert viewer.requests[-1].headers["x-lantern-schematic-admin"] == "v" * 32
+
+
+def test_insecure_admin_environment_override_is_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MINECRAFT_ALLOW_INSECURE_ADMIN", raising=False)
+    assert Settings.from_environment().allow_insecure_admin is False
+
+    monkeypatch.setenv("MINECRAFT_ALLOW_INSECURE_ADMIN", "true")
+    assert Settings.from_environment().allow_insecure_admin is True
+
+
+def test_explicit_insecure_admin_override_allows_test_mutation(tmp_path: Path) -> None:
+    viewer = RecordingViewer(protect_library_mutations=True)
+    with TestClient(
+        create_app(
+            viewer=viewer,
+            settings=_admin_settings(tmp_path, allow_insecure_admin=True),
+        )
+    ) as client:
         login = client.post(
             "/api/session/login",
             headers={"Origin": "http://testserver"},
@@ -267,7 +385,12 @@ def test_http_viewer_adapter_streams_to_fixed_private_upstream() -> None:
 def test_failed_admin_logins_are_rate_limited_without_trusting_forwarded_ip(
     tmp_path: Path,
 ) -> None:
-    with TestClient(create_app(viewer=RecordingViewer(), settings=_admin_settings(tmp_path))) as client:
+    with TestClient(
+        create_app(
+            viewer=RecordingViewer(),
+            settings=_admin_settings(tmp_path, allow_insecure_admin=True),
+        )
+    ) as client:
         for attempt in range(5):
             response = client.post(
                 "/api/session/login",
@@ -294,7 +417,10 @@ def test_failed_admin_logins_are_rate_limited_without_trusting_forwarded_ip(
 
 def test_admin_login_rejects_oversized_body_before_json_parsing(tmp_path: Path) -> None:
     with TestClient(
-        create_app(viewer=RecordingViewer(), settings=_admin_settings(tmp_path))
+        create_app(
+            viewer=RecordingViewer(),
+            settings=_admin_settings(tmp_path, allow_insecure_admin=True),
+        )
     ) as client:
         response = client.post(
             "/api/session/login",
@@ -311,7 +437,10 @@ def test_admin_login_stream_limit_does_not_depend_on_content_length(
 ) -> None:
     async def send_chunked() -> httpx.Response:
         transport = httpx.ASGITransport(
-            app=create_app(viewer=RecordingViewer(), settings=_admin_settings(tmp_path))
+            app=create_app(
+                viewer=RecordingViewer(),
+                settings=_admin_settings(tmp_path, allow_insecure_admin=True),
+            )
         )
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
@@ -364,7 +493,12 @@ def test_schematic_workspace_preserves_encoded_path_and_repeated_query() -> None
 
 
 def test_malformed_admin_cookie_fails_closed_as_anonymous(tmp_path: Path) -> None:
-    with TestClient(create_app(viewer=RecordingViewer(), settings=_admin_settings(tmp_path))) as client:
+    with TestClient(
+        create_app(
+            viewer=RecordingViewer(),
+            settings=_admin_settings(tmp_path, allow_insecure_admin=True),
+        )
+    ) as client:
         client.cookies.set("lantern_minecraft_admin", "not.valid@@")
         response = client.get("/api/session")
 

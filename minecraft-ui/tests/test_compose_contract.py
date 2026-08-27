@@ -1,8 +1,39 @@
 from pathlib import Path
+from typing import Any, Iterator
 
 import yaml
 
 ROOT = Path(__file__).parents[2]
+VIEWER_IMAGE = (
+    "ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:"
+    "d8dcef565e7da6c7536b591cc9cbe0471637364ffc22ae40590cd2c0910484a3"
+)
+APPROVED_ACTION_PINS = {
+    "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+    "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",
+    "astral-sh/setup-uv": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
+}
+
+
+class ComposeLoader(yaml.SafeLoader):
+    """Safe YAML loader that understands Compose sequence replacement tags."""
+
+
+ComposeLoader.add_constructor(
+    "!override", lambda loader, node: loader.construct_sequence(node)
+)
+
+
+def _action_references(value: Any) -> Iterator[str]:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "uses":
+                yield child
+            else:
+                yield from _action_references(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _action_references(child)
 
 
 def test_compose_publishes_only_minecraft_ui_and_keeps_viewer_private() -> None:
@@ -11,7 +42,9 @@ def test_compose_publishes_only_minecraft_ui_and_keeps_viewer_private() -> None:
     minecraft_ui = compose["services"]["minecraft-ui"]
     viewer = compose["services"]["schematic-viewer"]
 
-    assert minecraft_ui["ports"] == ["8093:8093"]
+    assert minecraft_ui["ports"] == [
+        "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8093:8093"
+    ]
     assert minecraft_ui.get("depends_on") is None
     assert viewer.get("ports") is None
     assert viewer["expose"] == ["4173"]
@@ -22,8 +55,7 @@ def test_compose_publishes_only_minecraft_ui_and_keeps_viewer_private() -> None:
     assert compose["volumes"]["schematic-viewer-data"]["name"] == (
         "lantern-schematic-viewer-data"
     )
-    assert viewer["image"].startswith("${SCHEMATIC_VIEWER_IMAGE:")
-    assert "latest" not in viewer["image"]
+    assert viewer["image"] == VIEWER_IMAGE
 
 
 def test_compose_hardens_both_new_services_and_mounts_file_secrets() -> None:
@@ -44,24 +76,111 @@ def test_compose_hardens_both_new_services_and_mounts_file_secrets() -> None:
     }
 
 
-def test_ci_uses_the_read_only_cross_repository_viewer_key() -> None:
+def test_compose_admin_transport_configuration_is_fail_closed() -> None:
+    compose = yaml.safe_load((ROOT / "stack" / "compose.yml").read_text(encoding="utf-8"))
+    ci_override = yaml.load(
+        (ROOT / "stack" / "compose.ci.yml").read_text(encoding="utf-8"),
+        Loader=ComposeLoader,
+    )
+    env_example = (ROOT / "stack" / ".env.example").read_text(encoding="utf-8")
+
+    assert (
+        compose["services"]["minecraft-ui"]["environment"][
+            "MINECRAFT_ALLOW_INSECURE_ADMIN"
+        ]
+        == "false"
+    )
+    assert (
+        ci_override["services"]["minecraft-ui"]["environment"][
+            "MINECRAFT_ALLOW_INSECURE_ADMIN"
+        ]
+        == "true"
+    )
+    assert compose["services"]["minecraft-ui"]["environment"][
+        "MINECRAFT_SECURE_COOKIE"
+    ] == "${MINECRAFT_SECURE_COOKIE:-false}"
+    assert "MINECRAFT_SECURE_COOKIE=false" in env_example.splitlines()
+    assert ci_override["services"]["minecraft-ui"]["ports"] == [
+        "127.0.0.1:8093:8093"
+    ]
+
+
+def test_ci_runs_minecraft_and_vm_recovery_tests() -> None:
     workflow = yaml.safe_load(
         (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     )
-    steps = workflow["jobs"]["minecraft-integration"]["steps"]
-    checkout = next(
-        step for step in steps if step.get("name") == "check out the reviewed viewer contract"
+    steps = workflow["jobs"]["python"]["steps"]
+    test_step = next(
+        step for step in steps if step.get("name") == "Minecraft UI and VM recovery tests"
     )
 
-    assert checkout["with"]["repository"] == "ScotsGamez/create-schematic-viewer"
-    assert checkout["with"]["ssh-key"] == "${{ secrets.SCHEMATIC_VIEWER_DEPLOY_KEY }}"
-    assert checkout["with"]["persist-credentials"] is False
+    assert test_step["working-directory"] == "minecraft-ui"
+    assert test_step["run"] == ".venv/bin/python -m pytest tests ../vm/tests -q"
+
+
+def test_ci_pulls_the_released_viewer_without_repository_credentials() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
+    )
+    integration = workflow["jobs"]["minecraft-integration"]
+    steps = integration["steps"]
+    serialized_workflow = (ROOT / ".github" / "workflows" / "validate.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "LANTERN_MINECRAFT_UI_BIND_IP" not in integration["env"]
+    assert "SCHEMATIC_VIEWER_DEPLOY_KEY" not in serialized_workflow
+    assert "repository: ScotsGamez/create-schematic-viewer" not in serialized_workflow
+    assert not any(step.get("name") == "check out the reviewed viewer contract" for step in steps)
+
+    build_step = next(
+        step for step in steps if step.get("name") == "build the Minecraft UI image"
+    )
+    assert "schematic-viewer" not in build_step["run"]
+
+    start_step = next(
+        step for step in steps if step.get("name") == "start only the Minecraft UI and viewer"
+    )
+    assert "pull schematic-viewer" in start_step["run"]
+    compose_prefix = "docker compose --file stack/compose.yml --file stack/compose.ci.yml"
+    compose_commands = [
+        line.strip()
+        for step in steps
+        for line in step.get("run", "").splitlines()
+        if line.strip().startswith("docker compose")
+    ]
+    assert compose_commands
+    assert all(command.startswith(compose_prefix) for command in compose_commands)
+
+    compose_job = workflow["jobs"]["compose"]
+    render_step = next(
+        step for step in compose_job["steps"] if step.get("name") == "validate rendered Compose model"
+    )
+    assert "--file stack/compose.ci.yml" in render_step["run"]
+    assert '$ports[0].host_ip == "127.0.0.1"' in render_step["run"]
+    assert '$ui.environment.MINECRAFT_ALLOW_INSECURE_ADMIN == "true"' in render_step["run"]
 
     secret_step = next(
         step for step in steps if step.get("name") == "create disposable file secrets"
     )
     assert 'chmod 640 stack/secrets/*' in secret_step["run"]
     assert 'LANTERN_SECRET_GID=$secret_gid' in secret_step["run"]
+
+
+def test_all_workflow_actions_use_the_approved_commit_pins() -> None:
+    found_actions: set[str] = set()
+    for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for reference in _action_references(workflow):
+            action, separator, revision = reference.rpartition("@")
+            assert separator, f"{path.name}: action is not pinned: {reference}"
+            assert action in APPROVED_ACTION_PINS, f"{path.name}: unapproved action: {action}"
+            assert revision == APPROVED_ACTION_PINS[action], (
+                f"{path.name}: {action} must use the approved full commit pin"
+            )
+            found_actions.add(action)
+
+    assert found_actions == set(APPROVED_ACTION_PINS)
 
 
 def test_ci_integration_assertions_report_the_failed_boundary() -> None:

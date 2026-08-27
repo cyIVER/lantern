@@ -135,16 +135,17 @@ services:
     restart: unless-stopped
     init: true
     ports:
-      - "8093:8093"
+      - "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8093:8093"
     environment:
       SCHEMATIC_VIEWER_URL: http://schematic-viewer:4173
       MINECRAFT_ADMIN_PASSWORD_HASH_FILE: /run/secrets/minecraft_admin_password_hash
       MINECRAFT_SESSION_SECRET_FILE: /run/secrets/minecraft_session_secret
       SCHEMATIC_VIEWER_ADMIN_TOKEN_FILE: /run/secrets/schematic_viewer_admin_token
       MINECRAFT_SESSION_TTL_SECONDS: "28800"
+      MINECRAFT_ALLOW_INSECURE_ADMIN: "false"
       # LANtern is deliberately plain HTTP on the private LAN. Change this to
       # true only after port 8093 is served through HTTPS.
-      MINECRAFT_SECURE_COOKIE: "false"
+      MINECRAFT_SECURE_COOKIE: "${MINECRAFT_SECURE_COOKIE:-false}"
     secrets:
       - minecraft_admin_password_hash
       - minecraft_session_secret
@@ -177,7 +178,7 @@ services:
   # Create Schematic Viewer is a private implementation detail of minecraft-ui.
   # No host port, Docker socket, game volume, or Wings network is attached.
   schematic-viewer:
-    image: "${SCHEMATIC_VIEWER_IMAGE:?must be a released GHCR image with immutable @sha256 digest, not :latest or mutable tag}"
+    image: "ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:d8dcef565e7da6c7536b591cc9cbe0471637364ffc22ae40590cd2c0910484a3"
     restart: unless-stopped
     init: true
     expose:

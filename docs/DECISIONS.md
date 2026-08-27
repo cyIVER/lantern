@@ -642,8 +642,9 @@ Browsing, inspection, conversion, and downloads remain anonymous. Persistent
 library changes require a self-contained Minecraft administrator login because
 the existing LANtern game UIs intentionally have no reusable authentication
 seam. A partial secret configuration fails closed. The current plain-HTTP LAN
-cannot protect the cookie in transit; internet exposure requires HTTPS and a
-Secure cookie.
+also disables administrator login and every mutation even when secrets exist;
+administration requires HTTPS and a Secure cookie. The insecure override exists
+only for isolated CI.
 
 The viewer and UI restart independently of the game. Library data lives in the
 named `lantern-schematic-viewer-data` volume and joins the nightly backup; the

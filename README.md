@@ -110,7 +110,7 @@ Every port below is on the VM, reachable directly from the LAN.
 | Stardew Control UI | `8092` | with Stardew | Started with the farm and deliberately not stopped with it |
 | Stardew HTTP API | `8091` | with Stardew | JunimoServer's own REST API |
 | Stardew web VNC | `5800` | with Stardew | Password-protected; drives the running game |
-| Minecraft UI + schematic workspace | `8093` | ✅ after release | Always-on UI; anonymous browsing, administrator-only library curation. Deployment is pending the release gate |
+| Minecraft UI + schematic workspace | `8093` | ✅ after release | Always-on UI; anonymous browsing. Library curation remains disabled until HTTPS is configured. Deployment is pending the release gate |
 | Wings daemon | `8080` | ✅ | Panel ↔ game server |
 | SFTP | `2022` | ✅ | Panel file manager |
 | MariaDB / Redis | internal | ✅ | No published ports |
@@ -251,9 +251,10 @@ ssh lantern 'cd /opt/lantern/stack && bash bootstrap/cs2-status.sh'
 - **Release the Minecraft UI on `:8093`.** Its application, private schematic
   sidecar, persistent volume, and selective deployment path are prepared on this
   feature branch, but nothing has been deployed to the VM. The release gate must
-  first pin an immutable viewer image digest, create the three file secrets, and
-  approve the two-service cutover. The landing-page link remains gated on its
-  server-side TCP probe until then.
+  first preserve the reviewed immutable viewer image pin, create the three file
+  secrets, and approve the two-service cutover. Plain-HTTP deployment provides
+  anonymous browsing only; administration waits for HTTPS. The landing-page link
+  remains gated on its server-side TCP probe until then.
 - **A real Minecraft LAN session.** The server installs, boots, answers RCON and
   accepts a TCP connection on 25565, and the world is in the nightly backup — but
   no actual player has ever connected to it. Everything about joining in

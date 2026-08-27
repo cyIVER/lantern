@@ -124,7 +124,8 @@ The repository now contains an always-on Minecraft UI for port **8093**. Its
 home page points players to the server and its `/schematics/` workspace embeds
 Create Schematic Viewer for catalogue browsing, 3D inspection, conversion and
 downloads. Reading the shared library is anonymous. Adding a schematic, adding
-a version, restoring or removing one requires the UI's administrator sign-in.
+a version, restoring or removing one requires the UI's administrator sign-in,
+which is disabled on LANtern's current plain-HTTP deployment.
 Pelican remains the place for the game console, files and mod management; power
 remains on the LANtern landing page.
 
@@ -142,11 +143,11 @@ schematic library remains available when Minecraft is stopped.
 > the UI answers. That selective deployment does not restart Wings or the
 > running Minecraft server.
 
-The admin session cookie is `HttpOnly` and `SameSite=Strict`, but LANtern still
-uses plain HTTP on a trusted private LAN. It therefore cannot safely set the
-cookie's `Secure` flag; anyone able to observe LAN traffic could observe the
-session. Do not expose port 8093 to the internet. Put the UI behind HTTPS and set
-`MINECRAFT_SECURE_COOKIE=true` before using it outside this LAN.
+LANtern currently uses plain HTTP on a trusted private LAN. Anonymous browsing
+therefore works, but administrator login and all mutation requests fail closed.
+Do not expose port 8093 to the internet or enable the insecure CI override on
+the VM. Put the UI behind HTTPS and set `MINECRAFT_SECURE_COOKIE=true` to enable
+administration with an `HttpOnly`, `SameSite=Strict`, `Secure` cookie.
 
 ---
 
@@ -160,12 +161,13 @@ which is worse than no backup because you find out weeks later.
 `logs/` and `crash-reports/` are excluded. Nothing else in the server directory is
 backed up — the 1.1 GB of mod jars is a re-download, the world is not.
 
-After the Minecraft UI release, the same job also archives the schematic
-library as `schematic-viewer-data.tgz`. It briefly stops and restarts only the
-private `schematic-viewer` container for a consistent volume snapshot. The
-public UI stays up, and neither Wings nor the running Minecraft server is
-stopped. The three UI/viewer secret files are included inside the mode-600
-`config.tgz` archive.
+After the Minecraft UI release, the same job also exports the schematic library
+with the viewer's typed backup manifest, packages it as
+`schematic-viewer-data.tgz`, and writes its SHA-256 companion. It briefly stops
+and restarts only the private `schematic-viewer` container for a consistent
+snapshot. The public UI stays up, and neither Wings nor the running Minecraft
+server is stopped. The three UI/viewer secret files are included inside the
+mode-600 `config.tgz` archive.
 
 Restore is deliberately explicit and replaces only the named schematic volume:
 
@@ -175,9 +177,13 @@ sudo /opt/lantern/vm/restore-schematic-library.sh \
   --confirm-replace
 ```
 
-The restore validates archive paths, creates a mode-600 pre-restore safety
-snapshot beside the selected archive, stops/restarts only `schematic-viewer`,
-and requires `/readyz` to recover. It never stops Wings or Minecraft.
+The restore requires an archive under the approved backup root and its matching
+SHA-256 companion. It validates the viewer's typed/versioned manifest and
+regular-file tree before stopping anything, creates an atomic mode-600 safety
+snapshot, and clears the live volume before replacement or rollback. A failed
+replacement returns to the original library when rollback and readiness both
+succeed; otherwise the viewer stays stopped instead of serving mixed or
+unhealthy data. It never stops Wings or Minecraft.
 
 Details, including how to restore: [../vm/README.md](../vm/README.md).
 

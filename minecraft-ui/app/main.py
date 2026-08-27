@@ -124,7 +124,7 @@ def create_app(
     async def login(request: Request, response: Response) -> None:
         access.require_same_origin(request)
         if not access.enabled:
-            raise HTTPException(503, "administrator login is not configured")
+            raise HTTPException(503, "administrator login is disabled")
         client_host = request.client.host if request.client else "unknown"
         retry_after = login_limiter.retry_after(client_host)
         if retry_after is not None:

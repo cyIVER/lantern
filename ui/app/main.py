@@ -171,7 +171,7 @@ async def resolve_identities() -> dict[int, str]:
 
 def merge_roster(json_text: str, status_text: str,
                  extra: dict[int, str] | None = None) -> dict[str, Any]:
-    """Combine status_json and status text outputs into a unified player roster with SteamIDs."""
+    """Combine status outputs into a roster, including SteamIDs when available."""
     info = parse_status_json(json_text)
     by_name = {c.get("name"): c for c in info.get("clients", []) if c.get("name")}
 

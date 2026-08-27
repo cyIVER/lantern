@@ -19,7 +19,7 @@ jobs:
     name: shell scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: shellcheck
         run: |
@@ -43,10 +43,10 @@ jobs:
     name: python
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: {python-version: '3.12'}
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.11.25'
 
@@ -54,20 +54,20 @@ jobs:
         run: uv sync --project minecraft-ui --locked --extra test
 
       - name: compile
-        run: python -m compileall -q eggs tools ui mcp minecraft-ui/app minecraft-ui/tests
+        run: python -m compileall -q eggs tools ui mcp minecraft-ui/app minecraft-ui/tests vm/tests
 
-      - name: Minecraft UI tests
+      - name: Minecraft UI and VM recovery tests
         working-directory: minecraft-ui
-        run: .venv/bin/python -m pytest tests -q
+        run: .venv/bin/python -m pytest tests ../vm/tests -q
 
       - name: ruff
-        run: uvx --from ruff==0.12.10 ruff check --select E9,F63,F7,F82,F401 eggs tools ui mcp minecraft-ui/app minecraft-ui/tests
+        run: uvx --from ruff==0.12.10 ruff check --select E9,F63,F7,F82,F401 eggs tools ui mcp minecraft-ui/app minecraft-ui/tests vm/tests
 
   compose:
     name: Minecraft Compose contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: create disposable configuration
         run: |
@@ -82,8 +82,30 @@ jobs:
         env:
           DB_ROOT_PASSWORD: ci-disposable-root
           DB_PASSWORD: ci-disposable-database
-          SCHEMATIC_VIEWER_IMAGE: ghcr.io/scotsgamez/create-schematic-viewer:ci@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-        run: docker compose --project-directory stack --file stack/compose.yml config --quiet
+        run: |
+          docker compose --project-directory stack --file stack/compose.yml \
+            config --format json > "$RUNNER_TEMP/compose-base.json"
+          docker compose --project-directory stack --file stack/compose.yml \
+            --file stack/compose.ci.yml \
+            config --format json > "$RUNNER_TEMP/compose-ci.json"
+          jq --exit-status '
+            .services["minecraft-ui"] as $ui |
+            $ui.ports as $ports |
+            ($ports | length) == 1 and
+            $ports[0].host_ip == "192.168.0.115" and
+            $ports[0].published == "8093" and
+            $ports[0].target == 8093
+          ' "$RUNNER_TEMP/compose-base.json"
+          jq --exit-status '
+            .services["minecraft-ui"] as $ui |
+            $ui.ports as $ports |
+            ($ports | length) == 1 and
+            $ports[0].host_ip == "127.0.0.1" and
+            $ports[0].published == "8093" and
+            $ports[0].target == 8093 and
+            $ui.environment.MINECRAFT_ALLOW_INSECURE_ADMIN == "true" and
+            $ui.environment.MINECRAFT_SECURE_COOKIE == "false"
+          ' "$RUNNER_TEMP/compose-ci.json"
 
   minecraft-integration:
     name: Minecraft UI and real viewer
@@ -93,24 +115,12 @@ jobs:
       COMPOSE_PROJECT_NAME: lantern-ci-${{ github.run_id }}-${{ github.run_attempt }}
       DB_ROOT_PASSWORD: ci-disposable-root
       DB_PASSWORD: ci-disposable-database
-      SCHEMATIC_VIEWER_IMAGE: lantern/schematic-viewer:ci
     steps:
       - name: check out LANtern
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: check out the reviewed viewer contract
-        uses: actions/checkout@v4
-        with:
-          repository: ScotsGamez/create-schematic-viewer
-          ref: ea0f9825d62f77fa26b19d9948d62418b248e6a3
-          path: viewer
-          ssh-key: ${{ secrets.SCHEMATIC_VIEWER_DEPLOY_KEY }}
-          persist-credentials: false
-
-      - name: build both application images
-        run: |
-          docker build --tag lantern/minecraft-ui:latest minecraft-ui
-          docker build --tag "$SCHEMATIC_VIEWER_IMAGE" viewer
+      - name: build the Minecraft UI image
+        run: docker build --tag lantern/minecraft-ui:latest minecraft-ui
 
       - name: create disposable file secrets
         run: |
@@ -131,8 +141,9 @@ jobs:
 
       - name: start only the Minecraft UI and viewer
         run: |
-          docker compose --file stack/compose.yml config --quiet
-          docker compose --file stack/compose.yml up --detach --no-deps \
+          docker compose --file stack/compose.yml --file stack/compose.ci.yml pull schematic-viewer
+          docker compose --file stack/compose.yml --file stack/compose.ci.yml config --quiet
+          docker compose --file stack/compose.yml --file stack/compose.ci.yml up --detach --no-deps \
             schematic-viewer minecraft-ui
 
       - name: verify health, proxy, and administrator boundary
@@ -159,7 +170,7 @@ jobs:
             sleep 2
           done
           if [ "$ready" != true ]; then
-            docker compose --file stack/compose.yml ps
+            docker compose --file stack/compose.yml --file stack/compose.ci.yml ps
             echo 'Minecraft UI did not become ready'
             exit 1
           fi
@@ -224,7 +235,7 @@ jobs:
             --write-out '%{http_code}' "$base/schematics/api/convert")
           assert_status 403 "$cross_origin_status" 'cross-origin mutation'
 
-          published=$(docker compose --file stack/compose.yml port schematic-viewer 4173 2>/dev/null || true)
+          published=$(docker compose --file stack/compose.yml --file stack/compose.ci.yml port schematic-viewer 4173 2>/dev/null || true)
           if [ -n "$published" ]; then
             echo "private viewer unexpectedly published at $published"
             exit 1
@@ -233,7 +244,7 @@ jobs:
             echo 'private viewer answered directly on the runner host'
             exit 1
           fi
-          viewer_container=$(docker compose --file stack/compose.yml ps --quiet schematic-viewer)
+          viewer_container=$(docker compose --file stack/compose.yml --file stack/compose.ci.yml ps --quiet schematic-viewer)
           viewer_health=unknown
           for _ in $(seq 1 45); do
             viewer_health=$(docker inspect --format '{{.State.Health.Status}}' "$viewer_container")
@@ -251,18 +262,18 @@ jobs:
 
       - name: show isolated service logs on failure
         if: failure()
-        run: docker compose --file stack/compose.yml logs --no-color --tail 100 minecraft-ui schematic-viewer
+        run: docker compose --file stack/compose.yml --file stack/compose.ci.yml logs --no-color --tail 100 minecraft-ui schematic-viewer
 
       - name: remove the isolated CI stack
         if: always()
-        run: docker compose --file stack/compose.yml down --volumes --remove-orphans || true
+        run: docker compose --file stack/compose.yml --file stack/compose.ci.yml down --volumes --remove-orphans || true
 
   eggs:
     name: eggs match their builders
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: {python-version: '3.12'}
 
       - name: rebuild and diff
@@ -303,7 +314,7 @@ jobs:
     name: docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: no broken relative links
         run: |

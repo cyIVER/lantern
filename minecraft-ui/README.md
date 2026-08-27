@@ -42,10 +42,15 @@ local viewer, set `SCHEMATIC_VIEWER_URL=http://127.0.0.1:4173` first.
 | `MINECRAFT_SESSION_SECRET_FILE` | unset | Cookie-signing secret, at least 32 bytes |
 | `SCHEMATIC_VIEWER_ADMIN_TOKEN_FILE` | unset | Shared private-hop token, at least 32 bytes |
 | `MINECRAFT_SESSION_TTL_SECONDS` | `28800` | Administrator session lifetime |
-| `MINECRAFT_SECURE_COOKIE` | `false` | Enable only when the public UI uses HTTPS |
+| `MINECRAFT_SECURE_COOKIE` | `false` | Enables the administrator surface and marks its cookie Secure; set through `stack/.env` only after HTTPS is active |
+| `MINECRAFT_ALLOW_INSECURE_ADMIN` | `false` | Test/CI override only; never enable on the LAN deployment |
 
 If all three secret paths are unset, browsing works and administration is
-disabled. A partial or undersized secret configuration fails at startup.
+disabled. A partial or undersized secret configuration fails at startup. Even
+with valid secrets, the administrator surface stays disabled while the UI is
+plain HTTP. Put the UI behind HTTPS and set `MINECRAFT_SECURE_COOKIE=true` before
+allowing sign-in or library mutation. The insecure override exists only so
+isolated automated tests can exercise the administrator flow.
 
 ## HTTP interface
 

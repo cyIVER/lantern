@@ -94,18 +94,19 @@ prefix-stripping, streaming reverse proxy to a Create Schematic Viewer sidecar
 on private port `4173`; that sidecar has no host port, Docker socket, Wings
 network or game-volume mount.
 
-Anonymous requests can browse, inspect, convert and download schematics. After
-administrator sign-in, the UI validates a signed session and injects a
-file-mounted trust token only on the private hop to the viewer. It strips any
-client-supplied trust, forwarding, cookie and authorization headers. Persistent
-library data is isolated in `lantern-schematic-viewer-data` and is included in
-the nightly backup.
+Anonymous requests can browse, inspect, convert and download schematics. When
+the UI is served through HTTPS, administrator sign-in validates a signed session
+and injects a file-mounted trust token only on the private hop to the viewer. It
+strips any client-supplied trust, forwarding, cookie and authorization headers.
+Persistent library data is isolated in `lantern-schematic-viewer-data` and is
+included in the nightly backup.
 
-LANtern is plain HTTP by design. The admin cookie is `HttpOnly`,
-`SameSite=Strict`, signed and time-limited, but it cannot use `Secure` until the
-UI is served through HTTPS. Exact same-origin checks protect unsafe requests;
-they do not make plaintext transport safe on an untrusted network. Port 8093 is
-LAN-only and must never be internet-published in this configuration.
+LANtern is plain HTTP by design, so administrator sign-in and all mutations are
+disabled by default; anonymous access remains useful. Exact same-origin checks
+are defense in depth, not a replacement for transport security. Administration
+requires HTTPS with `MINECRAFT_SECURE_COOKIE=true`; the insecure override is for
+isolated CI only. Port 8093 is LAN-only and must never be internet-published in
+this configuration.
 
 ---
 

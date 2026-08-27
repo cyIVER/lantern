@@ -125,10 +125,12 @@ sudo /opt/lantern/vm/restore-schematic-library.sh \
   --confirm-replace
 ```
 
-The restore validates the archive, snapshots the current volume beside it,
-replaces only `lantern-schematic-viewer-data`, and verifies that LANtern
-readiness returns. If the private viewer was running, it alone is briefly
-stopped and restarted; Minecraft, Wings, and the panel are not touched.
+The backup includes the viewer's typed/versioned manifest and a SHA-256 companion.
+The restore accepts archives only from the approved backup root, verifies both,
+validates the regular-file tree in staging, and atomically snapshots the current
+volume before replacing only `lantern-schematic-viewer-data`. If replacement or
+rollback cannot complete cleanly, the private viewer stays stopped rather than
+serving mixed data. Minecraft, Wings, and the panel are not touched.
 
 `stack/bootstrap/backup.sh` is the single-game version of the same idea — quick
 to reach for before a risky change to one server. It writes to

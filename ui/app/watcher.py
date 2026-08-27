@@ -67,7 +67,7 @@ def steam64(acct: str | int) -> str:
 
 
 def strip_ansi(s: str) -> str:
-    """Remove ANSI escape sequences from console output."""
+    """Remove ANSI SGR color and style sequences from console output."""
     return re.sub(r"\x1b\[[0-9;]*m", "", s)
 
 

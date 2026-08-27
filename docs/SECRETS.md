@@ -195,23 +195,7 @@ prints its own argv to the console, which leaks them into the log — that is wh
 
 ---
 
-## 5. Viewer CI deploy key
-
-`SCHEMATIC_VIEWER_DEPLOY_KEY` is a GitHub Actions secret containing the private
-half of a dedicated Ed25519 deploy key. It allows the LANtern integration job to
-read the private `ScotsGamez/create-schematic-viewer` repository at its reviewed
-commit. The public half is installed on that repository with **Allow write
-access** disabled; the key cannot push to either repository.
-
-Only the `minecraft-integration` job receives the key, and checkout does not
-persist it in Git configuration. The key is not a runtime or VM credential and
-does not belong in LANtern backups. To rotate it, create a new key pair, replace
-the LANtern Actions secret, add the new public key to the viewer repository,
-verify CI, then remove the old viewer deploy key.
-
----
-
-## 6. Minecraft UI and schematic-library secrets
+## 5. Minecraft UI and schematic-library secrets
 
 The release-gated Minecraft UI uses three files under
 `/opt/lantern/stack/secrets/`. None belongs in `.env`, Git, a container image or
@@ -252,12 +236,15 @@ required because file-backed Compose secrets retain their host ownership and
 mode; `0600` files would be unreadable inside the hardened containers. Do not
 make the files world-readable.
 
-The current LANtern deployment is plain HTTP. The signed session cookie is
-`HttpOnly` and `SameSite=Strict`, but deliberately lacks `Secure` because a
-browser would not return a Secure cookie over `http://192.168.0.115:8093`.
-Anyone able to observe LAN traffic may be able to observe that session. Never
-publish port 8093 to the internet; enable HTTPS and set
-`MINECRAFT_SECURE_COOKIE=true` before extending the trust boundary.
+The current LANtern deployment is plain HTTP, so administrator sign-in and every
+library mutation are disabled even when these secrets exist. Anonymous browsing,
+inspection, conversion and downloads remain available. Never set
+`MINECRAFT_ALLOW_INSECURE_ADMIN=true` on the VM: that override is reserved for
+isolated CI. To enable administration, put the UI behind HTTPS and set
+`MINECRAFT_SECURE_COOKIE=true` in `stack/.env`, then selectively recreate
+`minecraft-ui`; the signed cookie will then be `HttpOnly`,
+`SameSite=Strict`, `Secure`, and time-limited. Never publish port 8093 directly
+to the internet.
 
 Rotate one secret at a time:
 
@@ -278,7 +265,7 @@ and must be handled as described under [If a secret leaks](#if-a-secret-leaks).
 
 ---
 
-## 7. Router password
+## 6. Router password
 
 Not in `.env`. Not in the repo. The router MCP server stores it in **Windows
 Credential Manager**, encrypted at rest with DPAPI under your user account. No

@@ -45,5 +45,5 @@ def clear_password() -> None:
 
 
 def is_configured() -> bool:
-    """Check whether a router password has been stored."""
+    """Check whether a router password is available from the environment or keyring."""
     return get_password() is not None

@@ -63,6 +63,7 @@ class AdminSessionAccess:
     viewer_token: str | None
     ttl_seconds: int
     secure_cookie: bool
+    allow_insecure_admin: bool
 
     @classmethod
     def from_settings(cls, settings: Settings) -> AdminSessionAccess:
@@ -73,7 +74,14 @@ class AdminSessionAccess:
             settings.viewer_admin_token_file,
         )
         if not any(paths):
-            return cls(None, None, None, settings.session_ttl_seconds, settings.secure_cookie)
+            return cls(
+                None,
+                None,
+                None,
+                settings.session_ttl_seconds,
+                settings.secure_cookie,
+                settings.allow_insecure_admin,
+            )
         if not all(paths):
             raise ValueError("admin auth requires password hash, session secret, and viewer token files")
         password_hash = paths[0].read_text(encoding="utf-8").strip()  # type: ignore[union-attr]
@@ -89,16 +97,19 @@ class AdminSessionAccess:
             viewer_token,
             settings.session_ttl_seconds,
             settings.secure_cookie,
+            settings.allow_insecure_admin,
         )
 
     @property
     def enabled(self) -> bool:
-        """Whether administrator authentication is configured."""
-        return self.session_secret is not None
+        """Whether credentials are complete and secure/test transport is allowed."""
+        return self.session_secret is not None and (
+            self.secure_cookie or self.allow_insecure_admin
+        )
 
     def verify_password(self, password: str) -> bool:
         """Verify the provided password against the stored Argon2 hash."""
-        if not self.password_hash:
+        if not self.enabled or not self.password_hash:
             return False
         try:
             return PasswordHasher().verify(self.password_hash, password)
@@ -107,8 +118,8 @@ class AdminSessionAccess:
 
     def issue(self, response: Response) -> None:
         """Issue a signed session cookie with the configured TTL."""
-        if not self.session_secret:
-            raise HTTPException(503, "administrator login is not configured")
+        if not self.enabled or not self.session_secret:
+            raise HTTPException(503, "administrator login is disabled")
         payload = json.dumps(
             {"exp": int(time.time()) + self.ttl_seconds}, separators=(",", ":")
         ).encode("ascii")
@@ -129,7 +140,7 @@ class AdminSessionAccess:
 
     def is_admin(self, request: Request) -> bool:
         """Check whether the request carries a valid, unexpired admin session."""
-        if not self.session_secret:
+        if not self.enabled or not self.session_secret:
             return False
         token = request.cookies.get(COOKIE_NAME, "")
         try:

@@ -1,0 +1,9 @@
+# Integration-test override only. Production keeps plaintext administrator
+# sessions disabled in compose.yml; CI opts in so it can exercise that boundary
+# over the loopback-only port binding on an ephemeral GitHub-hosted runner.
+services:
+  minecraft-ui:
+    ports: !override
+      - "127.0.0.1:8093:8093"
+    environment:
+      MINECRAFT_ALLOW_INSECURE_ADMIN: "true"
