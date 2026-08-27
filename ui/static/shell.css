@@ -32,6 +32,7 @@
   --stop:      #d16850;
 
   --radius:    12px;
+  --wrap:      1080px;   /* content column */
 }
 
 * { box-sizing: border-box; }
@@ -56,7 +57,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 22px 30px;
+  padding: 22px max(30px, calc((100% - var(--wrap)) / 2));
   border-bottom: 1px solid var(--line);
 }
 
@@ -86,12 +87,11 @@ body {
 /* ------------------------------------------------------------------- main */
 main {
   flex: 1;
-  padding: 28px 30px 40px;
+  width: 100%;
+  padding: 28px max(30px, calc((100% - var(--wrap)) / 2)) 40px;
   display: flex;
   flex-direction: column;
   gap: 34px;
-  width: 100%;
-  max-width: 1000px;
 }
 
 .block { display: flex; flex-direction: column; gap: 16px; }
@@ -111,7 +111,7 @@ main {
 .empty { color: var(--dim); padding: 18px; }
 
 .foot {
-  padding: 16px 30px;
+  padding: 16px max(30px, calc((100% - var(--wrap)) / 2));
   border-top: 1px solid var(--line);
   color: var(--dim);
   font-size: 11.5px;
@@ -284,4 +284,5 @@ main {
   .top  { padding: 18px; flex-wrap: wrap; }
   main  { padding: 22px 18px 32px; gap: 26px; }
   .foot { padding: 14px 18px; }
+  .servers, .gauges { grid-template-columns: 1fr; }
 }
