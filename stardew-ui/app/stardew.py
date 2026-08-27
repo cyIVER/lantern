@@ -33,6 +33,7 @@ class StardewError(RuntimeError):
 
 
 def configured() -> bool:
+    """Check whether the Stardew API is configured with a base URL."""
     return bool(BASE)
 
 

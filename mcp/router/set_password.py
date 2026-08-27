@@ -14,6 +14,7 @@ import credentials
 
 
 def main() -> int:
+    """Prompt for the router admin password and store it securely in the OS keyring."""
     if "--clear" in sys.argv:
         credentials.clear_password()
         print("Cleared stored router password.")

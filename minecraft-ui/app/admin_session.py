@@ -21,11 +21,13 @@ COOKIE_NAME = "lantern_minecraft_admin"
 
 class LoginRateLimiter:
     def __init__(self, *, attempts: int = 5, window_seconds: int = 300) -> None:
+        """Initialize the rate limiter with maximum attempts and time window."""
         self._attempts = attempts
         self._window = window_seconds
         self._failures: dict[str, list[float]] = {}
 
     def retry_after(self, client_host: str) -> int | None:
+        """Return seconds until the client may retry, or None if attempts remain."""
         now = time.monotonic()
         recent = [
             value
@@ -38,9 +40,11 @@ class LoginRateLimiter:
         return max(1, math.ceil(self._window - (now - recent[0])))
 
     def failed(self, client_host: str) -> None:
+        """Record a failed login attempt for rate limiting."""
         self._failures.setdefault(client_host, []).append(time.monotonic())
 
     def succeeded(self, client_host: str) -> None:
+        """Clear failed attempts after a successful login."""
         self._failures.pop(client_host, None)
 
 
@@ -62,6 +66,7 @@ class AdminSessionAccess:
 
     @classmethod
     def from_settings(cls, settings: Settings) -> AdminSessionAccess:
+        """Construct AdminSessionAccess from application settings and secret files."""
         paths = (
             settings.admin_password_hash_file,
             settings.session_secret_file,
@@ -88,9 +93,11 @@ class AdminSessionAccess:
 
     @property
     def enabled(self) -> bool:
+        """Whether administrator authentication is configured."""
         return self.session_secret is not None
 
     def verify_password(self, password: str) -> bool:
+        """Verify the provided password against the stored Argon2 hash."""
         if not self.password_hash:
             return False
         try:
@@ -99,6 +106,7 @@ class AdminSessionAccess:
             return False
 
     def issue(self, response: Response) -> None:
+        """Issue a signed session cookie with the configured TTL."""
         if not self.session_secret:
             raise HTTPException(503, "administrator login is not configured")
         payload = json.dumps(
@@ -116,9 +124,11 @@ class AdminSessionAccess:
         )
 
     def clear(self, response: Response) -> None:
+        """Clear the session cookie to log out."""
         response.delete_cookie(COOKIE_NAME, path="/", httponly=True, samesite="strict")
 
     def is_admin(self, request: Request) -> bool:
+        """Check whether the request carries a valid, unexpired admin session."""
         if not self.session_secret:
             return False
         token = request.cookies.get(COOKIE_NAME, "")
@@ -133,12 +143,14 @@ class AdminSessionAccess:
             return False
 
     def require_same_origin(self, request: Request) -> None:
+        """Enforce same-origin policy for mutation requests."""
         origin = request.headers.get("origin", "")
         expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
         if not hmac.compare_digest(origin, expected):
             raise HTTPException(403, "same-origin request required")
 
     def viewer_credential(self, request: Request, path: str) -> str | None:
+        """Return the viewer admin token if the request is an authenticated admin session."""
         del path  # Authorization is request-scoped; the viewer owns route policy.
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             self.require_same_origin(request)

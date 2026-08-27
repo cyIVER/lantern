@@ -44,6 +44,7 @@ KNIFE_EXTRA = {"weapon_bayonet"}
 
 
 def connect():
+    """Open a connection to the WeaponPaints MySQL database."""
     return pymysql.connect(cursorclass=pymysql.cursors.DictCursor, **DB)
 
 
@@ -79,6 +80,7 @@ def knives() -> list[dict[str, Any]]:
 
 
 def knife_paints(weapon_name: str) -> list[dict[str, Any]]:
+    """Return all available paint finishes for a specific knife model."""
     return [
         {"paint": int(e["paint"]), "paint_name": e.get("paint_name", ""),
          "image": e.get("image", ""), "weapon_defindex": e.get("weapon_defindex")}
@@ -128,6 +130,7 @@ def weapons() -> list[dict[str, Any]]:
 
 
 def skins_for(weapon_name: str) -> list[dict[str, Any]]:
+    """Return all available skins for a specific weapon."""
     out = []
     for e in _load("skins_en.json"):
         if e.get("weapon_name") != weapon_name:
@@ -145,6 +148,7 @@ def skins_for(weapon_name: str) -> list[dict[str, Any]]:
 
 
 def gloves() -> list[dict[str, Any]]:
+    """Return all available glove models and their paint finishes."""
     out = []
     for e in _load("gloves_en.json"):
         paint = e.get("paint")
@@ -161,6 +165,7 @@ def gloves() -> list[dict[str, Any]]:
 
 # --------------------------------------------------------------------- writes
 def set_knife(steamid: str, weapon_name: str) -> None:
+    """Set the knife model for a player (applies to both T and CT sides)."""
     with connect() as c, c.cursor() as cur:
         for team in TEAMS:
             cur.execute(
@@ -184,6 +189,7 @@ def set_gloves(steamid: str, defindex: int, paint: int) -> None:
 
 def set_skin(steamid: str, defindex: int, paint: int,
              wear: float = 0.0, seed: int = 0, stattrak: bool = False) -> None:
+    """Set a weapon skin with optional wear, seed, and StatTrak for a player."""
     with connect() as c, c.cursor() as cur:
         for team in TEAMS:
             cur.execute(
@@ -194,6 +200,7 @@ def set_skin(steamid: str, defindex: int, paint: int,
 
 
 def clear(steamid: str) -> dict[str, int]:
+    """Remove all loadout customizations for a player and return counts by table."""
     removed = {}
     with connect() as c, c.cursor() as cur:
         for table in ("wp_player_knife", "wp_player_gloves", "wp_player_skins"):
@@ -202,6 +209,7 @@ def clear(steamid: str) -> dict[str, int]:
 
 
 def current(steamid: str) -> dict[str, Any]:
+    """Fetch the player's current loadout: knife, gloves, and all weapon skins."""
     with connect() as c, c.cursor() as cur:
         cur.execute("SELECT knife FROM wp_player_knife WHERE steamid=%s LIMIT 1", (steamid,))
         knife = (cur.fetchone() or {}).get("knife")
@@ -215,6 +223,7 @@ def current(steamid: str) -> dict[str, Any]:
 
 
 def health() -> dict[str, Any]:
+    """Check catalog availability and database connectivity for loadout services."""
     cat = {n: len(_load(n)) for n in ("skins_en.json", "gloves_en.json")}
     try:
         with connect() as c, c.cursor() as cur:

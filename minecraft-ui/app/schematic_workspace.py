@@ -85,6 +85,7 @@ class HttpViewerAdapter:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        """Initialize the HTTP viewer adapter with the base URL and optional transport."""
         self._base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(
             transport=transport,
@@ -212,6 +213,7 @@ def _response_headers(headers: list[tuple[str, str]]) -> dict[str, str]:
 def install_schematic_workspace(
     app: FastAPI, viewer: ViewerAdapter, access: AdminSessionAccess
 ) -> None:
+    """Install the schematic proxy routes into the FastAPI application."""
     @app.get("/schematics", include_in_schema=False)
     async def schematics_redirect() -> RedirectResponse:
         return RedirectResponse("/schematics/", status_code=308)

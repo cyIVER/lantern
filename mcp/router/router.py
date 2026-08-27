@@ -37,6 +37,7 @@ class RouterUnavailable(RuntimeError):
 
 @contextmanager
 def session() -> Iterator[Any]:
+    """Acquire a short-lived router session: authenticate, yield the client, then log out."""
     password = credentials.get_password()
     if not password:
         raise RouterUnavailable(

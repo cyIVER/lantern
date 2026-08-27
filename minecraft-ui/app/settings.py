@@ -23,6 +23,7 @@ class Settings:
 
     @classmethod
     def from_environment(cls) -> Settings:
+        """Load application settings from environment variables."""
         return cls(
             viewer_url=os.environ.get(
                 "SCHEMATIC_VIEWER_URL", "http://schematic-viewer:4173"

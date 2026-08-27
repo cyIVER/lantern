@@ -56,6 +56,7 @@ async def _read_login_body(request: Request) -> LoginBody:
 def create_app(
     *, viewer: ViewerAdapter | None = None, settings: Settings | None = None
 ) -> FastAPI:
+    """Create the LANtern Minecraft FastAPI application with schematic workspace and admin session."""
     config = settings or Settings.from_environment()
     access = AdminSessionAccess.from_settings(config)
     login_limiter = LoginRateLimiter()

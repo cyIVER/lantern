@@ -32,10 +32,12 @@ def get_password() -> str | None:
 
 
 def set_password(password: str) -> None:
+    """Store the router admin password in the OS keyring."""
     keyring.set_password(SERVICE, ACCOUNT, password)
 
 
 def clear_password() -> None:
+    """Delete the stored router password from the OS keyring."""
     try:
         keyring.delete_password(SERVICE, ACCOUNT)
     except keyring.errors.PasswordDeleteError:
@@ -43,4 +45,5 @@ def clear_password() -> None:
 
 
 def is_configured() -> bool:
+    """Check whether a router password has been stored."""
     return get_password() is not None

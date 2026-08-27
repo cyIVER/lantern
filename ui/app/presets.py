@@ -28,11 +28,13 @@ CREATE TABLE IF NOT EXISTS lantern_presets (
 
 
 def ensure_schema() -> None:
+    """Create the lantern_presets table if it does not already exist."""
     with loadout.connect() as c, c.cursor() as cur:
         cur.execute(SCHEMA)
 
 
 def list_for(steamid: str) -> list[dict[str, Any]]:
+    """Retrieve all saved loadout presets for a player."""
     with loadout.connect() as c, c.cursor() as cur:
         cur.execute(
             "SELECT slot, name, payload, updated FROM lantern_presets "
@@ -82,6 +84,7 @@ def capture(steamid: str, slot: int, name: str = "") -> dict[str, Any]:
 
 
 def delete(steamid: str, slot: int) -> int:
+    """Delete a specific preset slot for a player and return the count of rows removed."""
     with loadout.connect() as c, c.cursor() as cur:
         return cur.execute(
             "DELETE FROM lantern_presets WHERE steamid=%s AND slot=%s", (steamid, slot))
