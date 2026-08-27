@@ -105,8 +105,8 @@ directory. Status fields lie; artifacts do not.
 ### Ad-hoc commands
 
 ```bash
-python3 bootstrap/mc-rcon.py 127.0.0.1 25575 "$RCON_PASSWORD" "list"
-python3 bootstrap/mc-rcon.py 127.0.0.1 25575 "$RCON_PASSWORD" "op YourName"
+printf '%s' "$RCON_PASSWORD" | python3 bootstrap/mc-rcon.py --password-stdin 127.0.0.1 25575 "list"
+printf '%s' "$RCON_PASSWORD" | python3 bootstrap/mc-rcon.py --password-stdin 127.0.0.1 25575 "op YourName"
 ```
 
 Read the password from the panel, or:
@@ -157,6 +157,14 @@ The world is in the nightly backup, and it is taken **without kicking anyone**:
 `backup-all.sh` sends `save-off` and `save-all flush` over RCON, waits, tars, and
 sends `save-on`. A tar taken mid-chunk-write restores a world with holes in it,
 which is worse than no backup because you find out weeks later.
+
+The job fails closed: when Minecraft is running, missing RCON credentials or a
+failed quiescence command prevents `minecraft-world.tgz` from being published.
+If `save-off` succeeded, the EXIT recovery path attempts `save-on` even when a
+later step fails. `BACKUP_STATUS.json` records bounded failure codes for the
+admin dashboard and notification worker without including credentials, raw
+RCON output, or host paths. A pulled incomplete set is retained for diagnosis
+but is not eligible for restore.
 
 `logs/` and `crash-reports/` are excluded. Nothing else in the server directory is
 backed up — the 1.1 GB of mod jars is a re-download, the world is not.

@@ -45,6 +45,45 @@ step() { printf '\n\033[36m%s\033[0m\n' "$*"; }
 
 FAILED=0
 fail() { bad "$*"; FAILED=$((FAILED + 1)); }
+FAILURE_CODES=()
+fail_code() {
+  local code=$1
+  shift
+  FAILURE_CODES+=("$code")
+  fail "$*"
+}
+
+MC_SAVES_DISABLED=false
+MC_RESUME_FAILURE_RECORDED=false
+MC_RCON_PASSWORD=
+MC_RCON_PORT=
+MC_BACKUP_STATUS=not_configured
+
+minecraft_rcon() {
+  printf '%s' "$MC_RCON_PASSWORD" \
+    | python3 "${STACK}/bootstrap/mc-rcon.py" --password-stdin \
+        127.0.0.1 "$MC_RCON_PORT" "$1" >/dev/null 2>&1
+}
+
+resume_minecraft_saves() {
+  [ "$MC_SAVES_DISABLED" = true ] || return 0
+  # Consume the recovery intent before attempting it: one authoritative
+  # save-on result is reflected in status metadata, never a hidden EXIT retry.
+  MC_SAVES_DISABLED=false
+  if minecraft_rcon 'save-on'; then
+    MC_RCON_PASSWORD=
+    MC_RCON_PORT=
+    note '  Minecraft saves re-enabled'
+    return 0
+  fi
+  if [ "$MC_RESUME_FAILURE_RECORDED" = false ]; then
+    fail_code minecraft.rcon_resume_failed \
+      '  Minecraft saves could not be re-enabled; restart Minecraft before play resumes'
+    MC_RESUME_FAILURE_RECORDED=true
+  fi
+  MC_BACKUP_STATUS=resume_failed
+  return 1
+}
 
 # If the process is interrupted after the schematic sidecar is stopped, bring
 # that sidecar back. This deliberately names only schematic-viewer: the
@@ -76,7 +115,11 @@ restart_schematic_viewer() {
   SCHEMATIC_ARCHIVE_TMP=
   SCHEMATIC_CHECKSUM_TMP=
 }
-trap restart_schematic_viewer EXIT
+finish_backup() {
+  resume_minecraft_saves || true
+  restart_schematic_viewer
+}
+trap finish_backup EXIT
 
 cd "$STACK" || { bad "no stack at $STACK"; exit 1; }
 sudo mkdir -p "$OUT" && sudo chown "$(id -u):$(id -g)" "$OUT" || { bad "cannot write $OUT"; exit 1; }
@@ -128,21 +171,97 @@ MC_DIR="/var/lib/pelican/volumes/${MC_UUID}"
 if sudo test -d "$MC_DIR"; then
   # Quiesce through RCON if it is running, so the world is not tarred
   # mid-write. If it is not running there is nothing to quiesce.
-  MC_UP=$(docker inspect -f '{{.State.Running}}' "$MC_UUID" 2>/dev/null || echo false)
-  if [ "$MC_UP" = true ] && [ -x "${STACK}/bootstrap/mc-rcon.py" ]; then
-    python3 "${STACK}/bootstrap/mc-rcon.py" 'save-off'        >/dev/null 2>&1
-    python3 "${STACK}/bootstrap/mc-rcon.py" 'save-all flush'  >/dev/null 2>&1
-    sleep 3
-    note '  quiesced via RCON (nobody kicked)'
+  MC_BACKUP_ALLOWED=true
+  if ! MC_UP=$(docker inspect -f '{{.State.Running}}' "$MC_UUID" 2>/dev/null) \
+     || { [ "$MC_UP" != true ] && [ "$MC_UP" != false ]; }; then
+    MC_BACKUP_ALLOWED=false
+    MC_BACKUP_STATUS=state_unavailable
+    fail_code minecraft.state_unavailable \
+      '  Minecraft state could not be determined; refusing a potentially live archive'
+  elif [ "$MC_UP" = true ]; then
+    RCON_RECORD=$(docker compose exec -T panel php artisan tinker --execute="
+      \$s = \\App\\Models\\Server::where('uuid','${MC_UUID}')->firstOrFail();
+      \$e = [];
+      foreach (\$s->variables as \$v) { \$e[\$v->env_variable] = \$v->server_value ?? \$v->default_value; }
+      echo 'LANTERN_RCON_V1:'.base64_encode(\$e['RCON_PASSWORD'] ?? '').':'.(\$e['RCON_PORT'] ?? '');
+    " 2>/dev/null | grep '^LANTERN_RCON_V1:' | tail -1)
+    IFS=: read -r RCON_PREFIX RCON_ENCODED MC_RCON_PORT RCON_EXTRA <<< "$RCON_RECORD"
+    if [ ! -x "${STACK}/bootstrap/mc-rcon.py" ] \
+       || [ "$RCON_PREFIX" != LANTERN_RCON_V1 ] \
+       || [ -n "$RCON_EXTRA" ] \
+       || ! [[ "$RCON_ENCODED" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] \
+       || ! [[ "$MC_RCON_PORT" =~ ^[0-9]+$ ]] \
+       || [ "$MC_RCON_PORT" -lt 1 ] \
+       || [ "$MC_RCON_PORT" -gt 65535 ] \
+       || ! MC_RCON_PASSWORD=$(printf '%s' "$RCON_ENCODED" | base64 --decode 2>/dev/null) \
+       || [ -z "$MC_RCON_PASSWORD" ]; then
+      MC_BACKUP_ALLOWED=false
+      MC_BACKUP_STATUS=credentials_unavailable
+      fail_code minecraft.rcon_credentials_unavailable \
+        '  Minecraft RCON credentials are unavailable; refusing a live world archive'
+    elif ! minecraft_rcon 'save-off'; then
+      MC_BACKUP_ALLOWED=false
+      MC_BACKUP_STATUS=quiesce_failed
+      fail_code minecraft.rcon_quiesce_failed \
+        '  Minecraft save-off failed; refusing a live world archive'
+    else
+      MC_SAVES_DISABLED=true
+      if ! minecraft_rcon 'save-all flush'; then
+        MC_BACKUP_ALLOWED=false
+        MC_BACKUP_STATUS=quiesce_failed
+        fail_code minecraft.rcon_quiesce_failed \
+          '  Minecraft save-all flush failed; refusing a live world archive'
+        resume_minecraft_saves || true
+      else
+        sleep 3
+        note '  quiesced via RCON (nobody kicked)'
+      fi
+    fi
+    RCON_RECORD=
+    RCON_ENCODED=
   fi
-  sudo tar -C "$MC_DIR" -czf "$OUT/minecraft-world.tgz" \
-       --exclude='./logs' --exclude='./crash-reports' world 2>/dev/null \
-    && sudo chown "$(id -u):$(id -g)" "$OUT/minecraft-world.tgz" \
-    && ok "  minecraft-world.tgz ($(du -h "$OUT/minecraft-world.tgz" | cut -f1))" \
-    || fail '  Minecraft world'
-  [ "$MC_UP" = true ] && python3 "${STACK}/bootstrap/mc-rcon.py" 'save-on' >/dev/null 2>&1
+
+  if [ "$MC_BACKUP_ALLOWED" = true ] && [ "$MC_UP" = false ]; then
+    if ! MC_RECHECK=$(docker inspect -f '{{.State.Running}}' "$MC_UUID" 2>/dev/null) \
+       || [ "$MC_RECHECK" != false ]; then
+      MC_BACKUP_ALLOWED=false
+      MC_BACKUP_STATUS=state_changed
+      fail_code minecraft.state_changed \
+        '  Minecraft started before the offline archive; refusing the world backup'
+    fi
+  fi
+
+  if [ "$MC_BACKUP_ALLOWED" = true ]; then
+    if sudo tar -C "$MC_DIR" -czf "$OUT/minecraft-world.tgz" \
+         --exclude='./logs' --exclude='./crash-reports' world 2>/dev/null \
+       && sudo chown "$(id -u):$(id -g)" "$OUT/minecraft-world.tgz"; then
+      if [ "$MC_UP" = false ] \
+         && { ! MC_RECHECK=$(docker inspect -f '{{.State.Running}}' "$MC_UUID" 2>/dev/null) \
+              || [ "$MC_RECHECK" != false ]; }; then
+        rm -f -- "$OUT/minecraft-world.tgz"
+        MC_BACKUP_STATUS=state_changed
+        fail_code minecraft.state_changed \
+          '  Minecraft state changed during the offline archive; discarding it'
+      elif [ "$MC_UP" = true ]; then
+        MC_BACKUP_STATUS=quiesced_consistent
+        ok "  minecraft-world.tgz ($(du -h "$OUT/minecraft-world.tgz" | cut -f1))"
+      else
+        MC_BACKUP_STATUS=offline_consistent
+        ok "  minecraft-world.tgz ($(du -h "$OUT/minecraft-world.tgz" | cut -f1))"
+      fi
+    else
+      rm -f -- "$OUT/minecraft-world.tgz"
+      MC_BACKUP_STATUS=archive_failed
+      fail_code minecraft.archive_failed '  Minecraft world archive failed'
+    fi
+  else
+    rm -f -- "$OUT/minecraft-world.tgz"
+  fi
+  resume_minecraft_saves || true
 else
-  note '  no Minecraft server directory -- skipping'
+  MC_BACKUP_STATUS=missing
+  fail_code minecraft.world_missing \
+    '  Minecraft server directory is missing; refusing a worldless restore set'
 fi
 
 # ------------------------------------------------------- schematic library
@@ -287,6 +406,39 @@ else
 fi
 
 # ------------------------------------------------------------------ finish
+if [ "$FAILED" -gt 0 ]; then
+  BACKUP_STATUS=incomplete
+else
+  BACKUP_STATUS=complete
+fi
+if python3 - "$OUT/BACKUP_STATUS.json" "$STAMP" "$BACKUP_STATUS" "$FAILED" \
+  "$MC_BACKUP_STATUS" "${FAILURE_CODES[@]}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+path, backup_id, status, failure_count, minecraft_world, *failure_codes = sys.argv[1:]
+payload = {
+    "schema": 1,
+    "event": "backup.completed",
+    "backup_id": backup_id,
+    "status": status,
+    "failure_count": int(failure_count),
+    "failure_codes": failure_codes,
+    "components": {"minecraft_world": minecraft_world},
+}
+Path(path).write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+PY
+then
+  if ! chmod 600 "$OUT/BACKUP_STATUS.json"; then
+    rm -f -- "$OUT/BACKUP_STATUS.json"
+    fail_code backup.status_metadata_failed '  backup status permissions could not be secured'
+  fi
+else
+  rm -f -- "$OUT/BACKUP_STATUS.json"
+  fail_code backup.status_metadata_failed '  backup status metadata could not be written'
+fi
+
 {
   echo "taken:    $(date -u +%FT%TZ)"
   echo "host:     $(hostname)"
@@ -297,12 +449,51 @@ fi
 } > "$OUT/MANIFEST.txt"
 
 step 'Pruning'
-mapfile -t old < <(ls -1d "${DEST}"/*/ 2>/dev/null | sort | head -n -"$KEEP")
-if [ "${#old[@]}" -gt 0 ]; then
-  note "removing ${#old[@]} set(s) older than the last ${KEEP}"
-  sudo rm -rf "${old[@]}"
+if [ "$FAILED" -gt 0 ]; then
+  note 'current set is incomplete; retaining every prior set'
 else
-  note "keeping all sets (limit ${KEEP})"
+  complete_sets=()
+  while IFS= read -r directory; do
+    if python3 - "$directory/BACKUP_STATUS.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+try:
+    status = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    raise SystemExit(1)
+backup_id = Path(sys.argv[1]).parent.name
+valid_minecraft = status.get("components", {}).get("minecraft_world") in {
+    "offline_consistent",
+    "quiesced_consistent",
+}
+raise SystemExit(
+    0
+    if status.get("schema") == 1
+    and status.get("event") == "backup.completed"
+    and status.get("backup_id") == backup_id
+    and status.get("status") == "complete"
+    and status.get("failure_count") == 0
+    and status.get("failure_codes") == []
+    and valid_minecraft
+    else 1
+)
+PY
+    then
+      complete_sets+=("$directory")
+    fi
+  done < <(ls -1d "${DEST}"/*/ 2>/dev/null | sort)
+  old=()
+  if [ "${#complete_sets[@]}" -gt "$KEEP" ]; then
+    old=("${complete_sets[@]:0:${#complete_sets[@]}-KEEP}")
+  fi
+  if [ "${#old[@]}" -gt 0 ]; then
+    note "removing ${#old[@]} verified complete set(s) beyond the last ${KEEP}"
+    sudo rm -rf "${old[@]}"
+  else
+    note "keeping all verified complete sets (limit ${KEEP}); incomplete and legacy sets are untouched"
+  fi
 fi
 
 printf '\n'

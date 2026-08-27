@@ -71,31 +71,62 @@ mkdir -p "$DEST" || { echo "cannot write to ${DEST}" >&2; exit 1; }
 STAMP=$(date -u +%Y%m%d-%H%M%S)
 OUT="${DEST}/${GAME}-${STAMP}.tar.zst"
 
+if ! server_running=$(docker inspect -f '{{.State.Running}}' "$UUID" 2>/dev/null) \
+   || { [ "$server_running" != true ] && [ "$server_running" != false ]; }; then
+  echo "could not determine whether ${GAME} is running; refusing the archive" >&2
+  exit 1
+fi
 running=0
-[ "$(docker inspect -f '{{.State.Status}}' "$UUID" 2>/dev/null)" = "running" ] && running=1
+[ "$server_running" = true ] && running=1
 
-rcon() { python3 bootstrap/mc-rcon.py 127.0.0.1 "$RCON_PORT" "$RCON_PW" "$1" 2>/dev/null; }
+rcon() {
+  printf '%s' "$RCON_PW" \
+    | python3 bootstrap/mc-rcon.py --password-stdin 127.0.0.1 "$RCON_PORT" "$1" 2>/dev/null
+}
 
 quiesced=0
-if [ "$GAME" = "minecraft" ] && [ "$running" = "1" ] && [ "$RCON_PW" != "-" ]; then
-  echo "  quiescing the world"
-  rcon "save-off" >/dev/null
-  rcon "save-all flush" >/dev/null
-  quiesced=1
-  sleep 3
-elif [ "$running" = "1" ]; then
-  echo "  note: ${GAME} is running and cannot be quiesced -- backup may be inconsistent"
-fi
-
-# Restore saving no matter how this exits, or the world silently stops
-# persisting until the next restart.
-cleanup() {
+restore_saves() {
   if [ "$quiesced" = "1" ]; then
+    # Consume the recovery intent before the authoritative attempt. If this
+    # fails, the EXIT trap must preserve the failure rather than retrying with
+    # a result that cannot be represented by this one-shot backup command.
+    quiesced=0
     echo "  re-enabling saves"
-    rcon "save-on" >/dev/null
+    if rcon "save-on" >/dev/null; then
+      return 0
+    else
+      echo "  FAILED: saves could not be re-enabled; restart Minecraft before play resumes" >&2
+      return 1
+    fi
   fi
 }
-trap cleanup EXIT
+finish() {
+  local status=$?
+  trap - EXIT
+  restore_saves || status=1
+  exit "$status"
+}
+trap finish EXIT
+
+if [ "$GAME" = "minecraft" ] && [ "$running" = "1" ] && [ "$RCON_PW" != "-" ]; then
+  echo "  quiescing the world"
+  if ! rcon "save-off" >/dev/null; then
+    echo "  FAILED: save-off did not succeed; refusing a live world archive" >&2
+    exit 1
+  fi
+  quiesced=1
+  if ! rcon "save-all flush" >/dev/null; then
+    echo "  FAILED: save-all flush did not succeed; refusing a live world archive" >&2
+    exit 1
+  fi
+  sleep 3
+elif [ "$running" = "1" ]; then
+  if [ "$GAME" = "minecraft" ]; then
+    echo "  FAILED: Minecraft is running without RCON credentials; refusing a live world archive" >&2
+    exit 1
+  fi
+  echo "  note: ${GAME} is running and cannot be quiesced -- backup may be inconsistent"
+fi
 
 echo "  archiving ${UUID} -> ${OUT}"
 # --exclude the pack archive and mod jars for Minecraft: 6 GB of them are
@@ -104,6 +135,13 @@ echo "  archiving ${UUID} -> ${OUT}"
 EXCLUDES=()
 if [ "$GAME" = "minecraft" ]; then
   EXCLUDES=(--exclude=./mods --exclude=./libraries --exclude=./.serverpack.zip)
+  if [ "$running" = "0" ]; then
+    if ! state_recheck=$(docker inspect -f '{{.State.Running}}' "$UUID" 2>/dev/null) \
+       || [ "$state_recheck" != false ]; then
+      echo "  FAILED: Minecraft started before the offline archive" >&2
+      exit 1
+    fi
+  fi
 fi
 
 docker run --rm \
@@ -114,6 +152,15 @@ docker run --rm \
     cd /v/${UUID} && tar -c ${EXCLUDES[*]} . | zstd -3 -T0 -q -o /out/$(basename "$OUT")
   "
 rc=$?
+
+if [ "$GAME" = "minecraft" ] && [ "$running" = "0" ]; then
+  if ! state_recheck=$(docker inspect -f '{{.State.Running}}' "$UUID" 2>/dev/null) \
+     || [ "$state_recheck" != false ]; then
+    echo "  FAILED: Minecraft state changed during the offline archive" >&2
+    rm -f "$OUT"
+    exit 1
+  fi
+fi
 
 if [ "$rc" != "0" ] || [ ! -s "$OUT" ]; then
   echo "  FAILED (exit ${rc})" >&2
@@ -133,6 +180,10 @@ else
   echo "  WARNING: archive failed its integrity check" >&2
   exit 1
 fi
+
+# Do this before retention so a backup whose save recovery failed cannot evict
+# a previous known-good restore point.
+restore_saves || exit 1
 
 # Retention
 mapfile -t old < <(ls -1t "${DEST}/${GAME}-"*.tar.zst 2>/dev/null | tail -n +$((KEEP + 1)))
