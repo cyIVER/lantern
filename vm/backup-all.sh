@@ -53,8 +53,18 @@ step "Backing up to ${OUT}"
 # A dump, not a volume copy. Also far smaller: the datadir is 228 MB, the dump
 # of what matters is a couple of MB.
 note 'panel + weaponpaints databases'
-set -a; . ./.env; set +a
-if docker exec -e MYSQL_PWD="$DB_ROOT_PASSWORD" stack-database-1 \
+# Read the one value needed rather than sourcing .env. Sourcing it under
+# `set -u` dies on the CurseForge API key, which contains a literal $2 that
+# bash expands as an unset positional parameter -- an error that points at
+# line 8 of .env and has nothing to do with line 8 of .env.
+DB_ROOT_PASSWORD=$(grep -m1 '^DB_ROOT_PASSWORD=' .env | cut -d= -f2- | tr -d '\r')
+# Strip surrounding quotes with parameter expansion rather than a tr that has
+# to contain both quote characters and survive three levels of shell quoting.
+DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD%\"}"; DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD#\"}"
+DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD%\'}"; DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD#\'}"
+if [ -z "${DB_ROOT_PASSWORD}" ]; then
+  fail '  DB_ROOT_PASSWORD not found in stack/.env'
+elif docker exec -e MYSQL_PWD="$DB_ROOT_PASSWORD" stack-database-1 \
      mariadb-dump -uroot --single-transaction --routines --events \
      --databases panel cs2_weaponpaints 2>/dev/null | gzip > "$OUT/databases.sql.gz"; then
   # Verify by looking inside, not by trusting the pipe: mysqldump happily
