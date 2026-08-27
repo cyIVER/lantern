@@ -156,12 +156,22 @@ function serverCard(s) {
   btn.addEventListener('click', () => (up ? stopGame(s.id, s.label) : startGame(s.id, s.label)));
   actions.append(btn);
 
-  if (meta.ui) {
+  // ui_up is absent for games whose UI is served by this very page, which is
+  // trivially up if you are reading this.
+  const uiUp = s.ui_up !== false;
+  if (meta.ui && uiUp) {
     const a = document.createElement('a');
     a.className = 'btn tiny open';
     a.href = meta.href();
     a.textContent = meta.ui;
     actions.append(a);
+  } else if (meta.ui) {
+    const dead = document.createElement('button');
+    dead.className = 'btn tiny';
+    dead.textContent = meta.ui;
+    dead.disabled = true;
+    dead.title = 'That UI is not running. Start the game and it comes up with it.';
+    actions.append(dead);
   }
   return el;
 }

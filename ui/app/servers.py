@@ -190,14 +190,21 @@ async def status(game: str) -> dict[str, Any]:
 
     states = await asyncio.gather(*(_container_state(n) for n in spec["containers"]))
     main = states[spec["containers"].index("sdvd-server")]
-    # A missing sdvd-ui is not a reason to call the game unavailable; it only
-    # means the control UI link will not work until the game is started once.
+
+    # Whether the game's own control UI is reachable is a separate question
+    # from whether the game is running, and the landing page links to it. A
+    # link that silently goes nowhere is worse than one that says why.
+    keep = spec.get("keep_up", [])
+    keep_states = await asyncio.gather(*(_container_state(n) for n in keep)) if keep else []
+    ui_up = all(st == "running" for st in keep_states) if keep_states else True
+
     if "absent" in states:
         return {"id": game, "label": spec["label"], "note": spec["note"],
-                "state": "absent", "available": False,
+                "state": "absent", "available": False, "ui_up": ui_up,
                 "detail": "containers not created yet -- run `lantern use stardew` on the VM once"}
     return {"id": game, "label": spec["label"], "note": spec["note"],
-            "state": _normalise(main), "raw": main, "available": True}
+            "state": _normalise(main), "raw": main, "available": True,
+            "ui_up": ui_up}
 
 
 async def status_all() -> list[dict[str, Any]]:
