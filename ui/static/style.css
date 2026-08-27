@@ -320,16 +320,27 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
   font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--gold);
 }
 
-/* Back to the LANtern landing page. The CS2 UI is reachable on its own URL, so
-   this is a convenience, not the only way out. */
+/* Back to the LANtern landing page.
+   Styled as a control rather than a text link. The first version was 12px of
+   muted grey beside the wordmark, which rendered correctly and was invisible
+   in practice -- a link nobody finds is the same as no link. It borrows the
+   button treatment so the eye reads it as something to press. */
 .homelink {
-  margin-left: 18px;
+  margin-left: 20px;
   align-self: center;
-  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 13px;
+  border: 1px solid var(--line-hi);
+  background: var(--panel-2);
+  color: var(--text);
   text-decoration: none;
   font-size: 12px;
   letter-spacing: .08em;
   text-transform: uppercase;
   white-space: nowrap;
+  --cut: 6px;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
 }
-.homelink:hover { color: var(--gold); }
+.homelink:hover { border-color: var(--gold); color: var(--gold); }

@@ -363,16 +363,24 @@ code { font-family: Silkscreen, monospace; font-size: .82em; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
-/* Back to the LANtern landing page. This UI is reachable on its own URL, so
-   the link is a convenience rather than the only way out. It is resolved in JS
-   because the landing page is on a different port to this one. */
+/* Back to the LANtern landing page. Resolved in JS because the landing page is
+   on a different port to this one.
+   Styled as a control, not a text link: the first version was soft grey text
+   in a row of buttons, which reads as a label rather than something to press,
+   and went unnoticed. */
 .homelink {
-  color: var(--ink-soft, #7a6a52);
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 13px;
+  border: 2px solid var(--edge, #c9b48c);
+  border-radius: 8px;
+  background: var(--paper, #fdf6e8);
+  color: var(--ink, #4a3a26);
   text-decoration: none;
   font-size: 13px;
   white-space: nowrap;
 }
-.homelink:hover { text-decoration: underline; }
+.homelink:hover { background: #f0e4c8; }
 
 /* Power controls. Green to start, red to stop -- the same colours the LANtern
    landing page uses, because they do the same thing to the same server. */
