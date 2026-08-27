@@ -86,11 +86,12 @@ halves matter:
   different physical disk, which is the whole point. A backup you can only read
   by booting the thing that died is not a backup.
 
-Each set includes `BACKUP_STATUS.json`. The Windows pull preserves the remote
-backup exit status through its output pipeline, copies incomplete sets for
-diagnosis, and then exits nonzero so Task Scheduler records a failure. When a
-running Minecraft server cannot be quiesced, the world archive is omitted
-rather than publishing a potentially inconsistent restore point.
+A restore-eligible set includes a valid `BACKUP_STATUS.json`. The Windows pull
+preserves the remote backup exit status through its output pipeline and also
+copies incomplete sets for diagnosis; those sets may lack the status file. It
+then exits nonzero so Task Scheduler records a failure. When a running
+Minecraft server cannot be quiesced, the world archive is omitted rather than
+publishing a potentially inconsistent restore point.
 
 The set is roughly 165 MB and covers everything that cannot be downloaded again:
 

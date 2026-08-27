@@ -199,14 +199,17 @@ if sudo test -d "$MC_DIR"; then
       MC_BACKUP_STATUS=credentials_unavailable
       fail_code minecraft.rcon_credentials_unavailable \
         '  Minecraft RCON credentials are unavailable; refusing a live world archive'
-    elif ! minecraft_rcon 'save-off'; then
-      MC_BACKUP_ALLOWED=false
-      MC_BACKUP_STATUS=quiesce_failed
-      fail_code minecraft.rcon_quiesce_failed \
-        '  Minecraft save-off failed; refusing a live world archive'
     else
+      # The request can reach Minecraft even when the response is lost. Record
+      # recovery intent before transmission so an ambiguous error still gets
+      # one authoritative save-on attempt.
       MC_SAVES_DISABLED=true
-      if ! minecraft_rcon 'save-all flush'; then
+      if ! minecraft_rcon 'save-off'; then
+        MC_BACKUP_ALLOWED=false
+        MC_BACKUP_STATUS=quiesce_failed
+        fail_code minecraft.rcon_quiesce_failed \
+          '  Minecraft save-off failed; refusing a live world archive'
+      elif ! minecraft_rcon 'save-all flush'; then
         MC_BACKUP_ALLOWED=false
         MC_BACKUP_STATUS=quiesce_failed
         fail_code minecraft.rcon_quiesce_failed \

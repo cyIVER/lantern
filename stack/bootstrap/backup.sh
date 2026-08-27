@@ -110,11 +110,14 @@ trap finish EXIT
 
 if [ "$GAME" = "minecraft" ] && [ "$running" = "1" ] && [ "$RCON_PW" != "-" ]; then
   echo "  quiescing the world"
+  # A nonzero client result does not prove Minecraft missed the request. Set
+  # recovery intent before transmission so the EXIT path sends one save-on
+  # even when the save-off response is lost.
+  quiesced=1
   if ! rcon "save-off" >/dev/null; then
     echo "  FAILED: save-off did not succeed; refusing a live world archive" >&2
     exit 1
   fi
-  quiesced=1
   if ! rcon "save-all flush" >/dev/null; then
     echo "  FAILED: save-all flush did not succeed; refusing a live world archive" >&2
     exit 1

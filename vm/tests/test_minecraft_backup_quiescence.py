@@ -245,7 +245,7 @@ case "$joined" in
       state_error) exit 1 ;;
       state_empty) exit 0 ;;
       state_garbage) printf 'unknown\n'; exit 0 ;;
-      resume_failure) printf 'true\n'; exit 0 ;;
+      resume_failure|save_off) printf 'true\n'; exit 0 ;;
       start_before_archive)
         count_file="$FAKE_STATE_DIR/inspect-count"
         count=0
@@ -286,8 +286,10 @@ if [[ "${1:-}" == */mc-rcon.py ]]; then
   command="$*"
   cat >/dev/null
   printf 'single-rcon:%s\n' "$command" >> "$FAKE_OPERATION_LOG"
-  [ "$FAKE_SINGLE_STAGE:$command" != resume_failure:save-on ]
-  exit
+  case "$FAKE_SINGLE_STAGE:$command" in
+    resume_failure:save-on|save_off:save-off) exit 1 ;;
+  esac
+  exit 0
 fi
 exit 1
 ''',
@@ -359,7 +361,7 @@ def test_running_minecraft_quiesces_archives_and_resumes_in_order(
     ("stage", "reason", "expect_resume"),
     [
         ("credentials", "minecraft.rcon_credentials_unavailable", False),
-        ("save_off", "minecraft.rcon_quiesce_failed", False),
+        ("save_off", "minecraft.rcon_quiesce_failed", True),
         ("flush", "minecraft.rcon_quiesce_failed", True),
     ],
 )
@@ -373,8 +375,11 @@ def test_running_minecraft_refuses_archive_when_quiescence_fails(
 
     assert result.returncode != 0
     assert "world-archive" not in operations
+    if stage == "save_off":
+        assert operations.count("rcon:127.0.0.1:25575:save-off") == 1
     resumes = operations.count("rcon:127.0.0.1:25575:save-on")
     assert resumes == int(expect_resume)
+    assert status["status"] == "incomplete"
     assert reason in status["failure_codes"]
     combined = result.stdout + result.stderr + "\n".join(operations) + json.dumps(status)
     assert SENTINEL_PASSWORD not in combined
@@ -551,16 +556,16 @@ def test_success_prunes_only_verified_complete_sets(tmp_path: Path) -> None:
     assert legacy.exists()
 
 
-def test_single_game_backup_sets_cleanup_before_disabling_saves() -> None:
+def test_single_game_backup_sets_cleanup_and_recovery_intent_before_save_off() -> None:
     script = (ROOT / "stack" / "bootstrap" / "backup.sh").read_text(
         encoding="utf-8"
     )
 
     trap_position = script.index("trap finish EXIT")
     save_off_position = script.index('rcon "save-off"')
-    disabled_position = script.index("quiesced=1", save_off_position)
-    flush_position = script.index('rcon "save-all flush"', disabled_position)
-    assert trap_position < save_off_position < disabled_position < flush_position
+    disabled_position = script.index("quiesced=1", trap_position)
+    flush_position = script.index('rcon "save-all flush"', save_off_position)
+    assert trap_position < disabled_position < save_off_position < flush_position
     assert "refusing a live world archive" in script
     assert "trap - EXIT" in script
     assert 'restore_saves || status=1' in script
@@ -575,6 +580,17 @@ def test_single_game_failed_save_on_is_attempted_once_and_returns_nonzero(
     assert result.returncode != 0
     assert "single-world-archive" in operations
     assert operations.count("single-rcon:save-on") == 1
+
+
+def test_single_game_ambiguous_save_off_failure_recovers_once_without_archive(
+    tmp_path: Path,
+) -> None:
+    result, operations = _run_single_backup_state(tmp_path, "save_off")
+
+    assert result.returncode != 0
+    assert operations.count("single-rcon:save-off") == 1
+    assert operations.count("single-rcon:save-on") == 1
+    assert "single-world-archive" not in operations
 
 
 @pytest.mark.parametrize("stage", ["state_error", "state_empty", "state_garbage"])

@@ -10,7 +10,11 @@ import pytest
 
 ROOT = Path(__file__).parents[2]
 BACKUP_PULL = ROOT / "vm" / "backup-pull.ps1"
-POWERSHELL = shutil.which("pwsh") or shutil.which("powershell")
+POWERSHELL = (
+    shutil.which("powershell") or shutil.which("pwsh")
+    if os.name == "nt"
+    else shutil.which("pwsh")
+)
 STAMP = "20260827-010203"
 
 
@@ -28,6 +32,12 @@ def _status(*, stamp: str = STAMP, state: str = "complete") -> dict[str, object]
         "failure_codes": [] if state == "complete" else ["minecraft.rcon_quiesce_failed"],
         "components": {"minecraft_world": "offline_consistent"},
     }
+
+
+def _status_without(field: str) -> dict[str, object]:
+    status = _status()
+    status.pop(field)
+    return status
 
 
 def _fake_tools(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -157,8 +167,55 @@ def test_remote_failure_is_propagated_after_evidence_is_copied(tmp_path: Path) -
         None,
         "{not-json\n",
         {"schema": 1, "status": "complete"},
+        json.dumps([_status()]),
+        _status() | {"schema": "1"},
+        _status() | {"failure_count": "0"},
+        _status() | {"event": 1},
+        _status() | {"backup_id": [STAMP]},
+        _status() | {"status": True},
+        _status() | {"failure_codes": None},
+        _status() | {"failure_codes": ""},
+        _status() | {"components": []},
+        _status() | {"components": {"minecraft_world": 1}},
+        _status() | {"components": {"minecraft_world": "OFFLINE_CONSISTENT"}},
+        *(
+            _status_without(field)
+            for field in (
+                "schema",
+                "event",
+                "backup_id",
+                "status",
+                "failure_count",
+                "failure_codes",
+                "components",
+            )
+        ),
+        _status() | {"components": {}},
     ],
-    ids=["missing", "invalid", "partial"],
+    ids=[
+        "missing",
+        "invalid-json",
+        "partial",
+        "top-level-array",
+        "schema-numeric-string",
+        "failure-count-numeric-string",
+        "event-wrong-type",
+        "backup-id-wrong-type",
+        "status-wrong-type",
+        "failure-codes-null",
+        "failure-codes-string",
+        "components-wrong-type",
+        "minecraft-world-wrong-type",
+        "minecraft-world-wrong-case",
+        "missing-schema",
+        "missing-event",
+        "missing-backup-id",
+        "missing-status",
+        "missing-failure-count",
+        "missing-failure-codes",
+        "missing-components",
+        "missing-minecraft-world",
+    ],
 )
 def test_missing_invalid_or_partial_status_is_rejected_but_retained(
     tmp_path: Path, status: dict[str, object] | str | None
@@ -195,12 +252,19 @@ def test_success_prunes_only_fully_verified_complete_sets(tmp_path: Path) -> Non
     incomplete = "20260301-000000"
     partial = "20260401-000000"
     legacy = "20260501-000000"
+    numeric_schema = "20260601-000000"
+    top_level_array = "20260701-000000"
+    wrong_case_state = "20260801-000000"
     local_statuses: dict[str, dict[str, object] | str | None] = {
         oldest_complete: _status(stamp=oldest_complete),
         newest_complete: _status(stamp=newest_complete),
         incomplete: _status(stamp=incomplete, state="incomplete"),
         partial: {"schema": 1, "status": "complete"},
         legacy: None,
+        numeric_schema: _status(stamp=numeric_schema) | {"schema": "1"},
+        top_level_array: json.dumps([_status(stamp=top_level_array)]),
+        wrong_case_state: _status(stamp=wrong_case_state)
+        | {"components": {"minecraft_world": "OFFLINE_CONSISTENT"}},
     }
 
     result, destination = _run_pull(
@@ -217,3 +281,6 @@ def test_success_prunes_only_fully_verified_complete_sets(tmp_path: Path) -> Non
     assert (destination / incomplete).is_dir()
     assert (destination / partial).is_dir()
     assert (destination / legacy).is_dir()
+    assert (destination / numeric_schema).is_dir()
+    assert (destination / top_level_array).is_dir()
+    assert (destination / wrong_case_state).is_dir()

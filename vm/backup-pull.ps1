@@ -50,6 +50,57 @@ $o   = @('-i', $Key, '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile
 
 function Log($m) { Write-Host ("  {0}  {1}" -f (Get-Date -Format 'HH:mm:ss'), $m) }
 
+function Test-BackupStatus {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ExpectedBackupId
+    )
+
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw
+        # Windows PowerShell 5.1 unwraps a one-item top-level JSON array during
+        # ConvertFrom-Json. Check the JSON shape before parsing so an array can
+        # never masquerade as the one required status object.
+        if ([string]::IsNullOrWhiteSpace($raw) -or -not $raw.TrimStart().StartsWith('{')) {
+            return $false
+        }
+        $candidate = $raw | ConvertFrom-Json
+    } catch {
+        return $false
+    }
+
+    if ($candidate -isnot [System.Management.Automation.PSCustomObject]) {
+        return $false
+    }
+    $schemaIsInteger = $candidate.schema -is [int] -or $candidate.schema -is [long]
+    $failureCountIsInteger = (
+        $candidate.failure_count -is [int] -or $candidate.failure_count -is [long]
+    )
+    $failureCodesAreEmptyArray = (
+        $candidate.failure_codes -is [System.Array] -and $candidate.failure_codes.Count -eq 0
+    )
+    $componentsAreObject = (
+        $candidate.components -is [System.Management.Automation.PSCustomObject]
+    )
+    $validMinecraftStates = @('offline_consistent', 'quiesced_consistent')
+    $minecraftStateIsValid = $componentsAreObject `
+        -and $candidate.components.minecraft_world -is [string] `
+        -and $validMinecraftStates -ccontains $candidate.components.minecraft_world
+
+    return $schemaIsInteger `
+        -and $candidate.schema -eq 1 `
+        -and $candidate.event -is [string] `
+        -and $candidate.event -ceq 'backup.completed' `
+        -and $candidate.backup_id -is [string] `
+        -and $candidate.backup_id -ceq $ExpectedBackupId `
+        -and $candidate.status -is [string] `
+        -and $candidate.status -ceq 'complete' `
+        -and $failureCountIsInteger `
+        -and $candidate.failure_count -eq 0 `
+        -and $failureCodesAreEmptyArray `
+        -and $minecraftStateIsValid
+}
+
 # ------------------------------------------------------------------ preflight
 if (-not (Test-Path $Key)) { Log "no SSH key at $Key"; exit 1 }
 
@@ -101,25 +152,9 @@ if (-not (Test-Path -LiteralPath $statusPath)) {
     $backupFailed = $true
     Log 'INCOMPLETE: BACKUP_STATUS.json is missing'
 } else {
-    try {
-        $status = Get-Content -LiteralPath $statusPath -Raw | ConvertFrom-Json
-        $validMinecraftState = $status.components.minecraft_world -in @(
-            'offline_consistent', 'quiesced_consistent'
-        )
-        $validStatus = $status.schema -eq 1 `
-            -and $status.event -eq 'backup.completed' `
-            -and $status.backup_id -eq $stamp `
-            -and $status.status -eq 'complete' `
-            -and $status.failure_count -eq 0 `
-            -and @($status.failure_codes).Count -eq 0 `
-            -and $validMinecraftState
-        if (-not $validStatus) {
-            $backupFailed = $true
-            Log 'INCOMPLETE: backup status contract is not restore-eligible'
-        }
-    } catch {
+    if (-not (Test-BackupStatus -Path $statusPath -ExpectedBackupId $stamp)) {
         $backupFailed = $true
-        Log 'INCOMPLETE: BACKUP_STATUS.json is invalid'
+        Log 'INCOMPLETE: backup status contract is not restore-eligible'
     }
 }
 
@@ -128,22 +163,7 @@ $sets = @(Get-ChildItem $Dest -Directory | Sort-Object Name)
 if (-not $backupFailed) {
     $completeSets = @($sets | Where-Object {
         $candidateStatus = Join-Path $_.FullName 'BACKUP_STATUS.json'
-        if (-not (Test-Path -LiteralPath $candidateStatus)) { return $false }
-        try {
-            $candidate = Get-Content -LiteralPath $candidateStatus -Raw | ConvertFrom-Json
-            $candidateMinecraftState = $candidate.components.minecraft_world -in @(
-                'offline_consistent', 'quiesced_consistent'
-            )
-            $candidate.schema -eq 1 `
-                -and $candidate.event -eq 'backup.completed' `
-                -and $candidate.backup_id -eq $_.Name `
-                -and $candidate.status -eq 'complete' `
-                -and $candidate.failure_count -eq 0 `
-                -and @($candidate.failure_codes).Count -eq 0 `
-                -and $candidateMinecraftState
-        } catch {
-            $false
-        }
+        Test-BackupStatus -Path $candidateStatus -ExpectedBackupId $_.Name
     })
     if ($completeSets.Count -gt $Keep) {
         $old = $completeSets | Select-Object -First ($completeSets.Count - $Keep)
