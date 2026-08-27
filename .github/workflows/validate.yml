@@ -104,6 +104,8 @@ jobs:
           repository: ScotsGamez/create-schematic-viewer
           ref: ea0f9825d62f77fa26b19d9948d62418b248e6a3
           path: viewer
+          ssh-key: ${{ secrets.SCHEMATIC_VIEWER_DEPLOY_KEY }}
+          persist-credentials: false
 
       - name: build both application images
         run: |

@@ -195,7 +195,23 @@ prints its own argv to the console, which leaks them into the log — that is wh
 
 ---
 
-## 5. Minecraft UI and schematic-library secrets
+## 5. Viewer CI deploy key
+
+`SCHEMATIC_VIEWER_DEPLOY_KEY` is a GitHub Actions secret containing the private
+half of a dedicated Ed25519 deploy key. It allows the LANtern integration job to
+read the private `ScotsGamez/create-schematic-viewer` repository at its reviewed
+commit. The public half is installed on that repository with **Allow write
+access** disabled; the key cannot push to either repository.
+
+Only the `minecraft-integration` job receives the key, and checkout does not
+persist it in Git configuration. The key is not a runtime or VM credential and
+does not belong in LANtern backups. To rotate it, create a new key pair, replace
+the LANtern Actions secret, add the new public key to the viewer repository,
+verify CI, then remove the old viewer deploy key.
+
+---
+
+## 6. Minecraft UI and schematic-library secrets
 
 The release-gated Minecraft UI uses three files under
 `/opt/lantern/stack/secrets/`. None belongs in `.env`, Git, a container image or
@@ -252,7 +268,7 @@ and must be handled as described under [If a secret leaks](#if-a-secret-leaks).
 
 ---
 
-## 6. Router password
+## 7. Router password
 
 Not in `.env`. Not in the repo. The router MCP server stores it in **Windows
 Credential Manager**, encrypted at rest with DPAPI under your user account. No
@@ -304,7 +320,7 @@ python -m mcp.router.set_password                # optional
    - Discord: **Delete Webhook** in channel settings, make a new one
    - Steam: change the password, then **Deauthorize all devices** in Steam Guard settings
    - RCON: `rotate-rcon.php`
-   - Minecraft UI: rotate the affected file with the commands in section 5;
+   - Minecraft UI: rotate the affected file with the commands in section 6;
      rotate both the session secret and viewer token if the leaked value is unknown
 2. Then remove it from history with `git filter-branch` or `git filter-repo`, and
    force-push. Assume anything that reached a public GitHub is already scraped —

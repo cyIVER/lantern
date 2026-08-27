@@ -41,3 +41,17 @@ def test_compose_hardens_both_new_services_and_mounts_file_secrets() -> None:
         "minecraft_session_secret",
         "schematic_viewer_admin_token",
     }
+
+
+def test_ci_uses_the_read_only_cross_repository_viewer_key() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["minecraft-integration"]["steps"]
+    checkout = next(
+        step for step in steps if step.get("name") == "check out the reviewed viewer contract"
+    )
+
+    assert checkout["with"]["repository"] == "ScotsGamez/create-schematic-viewer"
+    assert checkout["with"]["ssh-key"] == "${{ secrets.SCHEMATIC_VIEWER_DEPLOY_KEY }}"
+    assert checkout["with"]["persist-credentials"] is False
