@@ -58,6 +58,16 @@ def test_compose_publishes_only_minecraft_ui_and_keeps_viewer_private() -> None:
     assert viewer["image"] == VIEWER_IMAGE
 
 
+def test_landing_probe_uses_the_minecraft_ui_lan_bind_address() -> None:
+    compose = yaml.safe_load((ROOT / "stack" / "compose.yml").read_text(encoding="utf-8"))
+    bind_address = "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}"
+
+    assert compose["services"]["minecraft-ui"]["ports"] == [
+        f"{bind_address}:8093:8093"
+    ]
+    assert compose["services"]["ui"]["environment"]["UI_PROBE_HOST"] == bind_address
+
+
 def test_compose_hardens_both_new_services_and_mounts_file_secrets() -> None:
     compose = yaml.safe_load((ROOT / "stack" / "compose.yml").read_text(encoding="utf-8"))
 
