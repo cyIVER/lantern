@@ -8,7 +8,12 @@ to fall back on an idle timer -- Minecraft implements RCON properly: responses
 arrive in order and the request id is reflected. That makes a plain
 request/response exchange reliable here.
 
-    python3 mc-rcon.py <host> <port> <password> "list"
+    printf '%s' "$RCON_PASSWORD" |
+      python3 mc-rcon.py --password-stdin <host> <port> "list"
+
+The legacy positional-password form remains available for interactive use, but
+automation should use ``--password-stdin`` so the password is not visible in a
+process listing.
 """
 from __future__ import annotations
 
@@ -67,10 +72,29 @@ def execute(host: str, port: int, password: str, command: str, timeout: float = 
 
 
 def main() -> int:
-    if len(sys.argv) < 5:
+    args = sys.argv[1:]
+    if args[:1] == ["--password-stdin"]:
+        if len(args) < 4:
+            print(__doc__.strip(), file=sys.stderr)
+            return 2
+        host, port_text = args[1], args[2]
+        password = sys.stdin.read().rstrip("\r\n")
+        command = " ".join(args[3:])
+    elif len(args) >= 4:
+        host, port_text, password = args[0], args[1], args[2]
+        command = " ".join(args[3:])
+    else:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    host, port, password, command = sys.argv[1], int(sys.argv[2]), sys.argv[3], " ".join(sys.argv[4:])
+
+    try:
+        port = int(port_text)
+    except ValueError:
+        print("rcon: port must be an integer", file=sys.stderr)
+        return 2
+    if not 1 <= port <= 65_535 or not password or not command:
+        print("rcon: host, port, password, and command are required", file=sys.stderr)
+        return 2
     try:
         print(execute(host, port, password, command))
     except (RconError, OSError) as exc:

@@ -221,7 +221,8 @@ elif [ "$FAIL" = "0" ]; then
 fi
 
 if [ -n "${RCON_PW:-}" ] && [ "$RCON_PW" != "-" ]; then
-  out=$(python3 bootstrap/mc-rcon.py 127.0.0.1 "${RCON_PORT:-25575}" "${RCON_PW}" list 2>&1)
+  out=$(printf '%s' "$RCON_PW" \
+    | python3 bootstrap/mc-rcon.py --password-stdin 127.0.0.1 "${RCON_PORT:-25575}" list 2>&1)
   if echo "$out" | grep -qi 'players online'; then
     ok "rcon answers: ${out}"
   else

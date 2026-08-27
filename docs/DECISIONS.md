@@ -543,7 +543,9 @@ Three decisions inside it are the ones worth keeping:
 - **Minecraft is quiesced over RCON, not stopped.** `save-off` plus
   `save-all flush` gets a consistent world without kicking anyone. A tar taken
   mid-chunk-write restores a world with holes in it, which is worse than no
-  backup because you find out weeks later.
+  backup because you find out weeks later. A running world is therefore omitted
+  when credentials or either quiescence command fails; the backup set is marked
+  incomplete rather than presenting an unsafe restore point.
 - **The result is pulled to D: as plain files.** Not left on the VM, not written
   into a second virtual disk. The failure this insures against is losing the VM,
   and a backup you can only read by booting the thing that died is not a backup.
