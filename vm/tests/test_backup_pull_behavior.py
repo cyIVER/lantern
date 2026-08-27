@@ -83,6 +83,7 @@ exit 90
     _write_fake(
         fake_scp,
         r"""param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments)
+$ErrorActionPreference = 'Stop'
 $target = $Arguments[-1]
 if ($env:FAKE_REPARSE_MODE -eq 'root') {
     New-Item -ItemType Junction -Path $target -Target $env:FAKE_REMOTE_DIR |
@@ -401,6 +402,10 @@ def test_valid_producer_sha256sum_manifest_is_accepted(tmp_path: Path) -> None:
     assert RESULT_MARKER not in result.stdout
 
 
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason="Windows junction and reparse-point semantics require NTFS",
+)
 @pytest.mark.parametrize("reparse_mode", ["root", "child"])
 def test_reparse_points_are_rejected_before_publication(
     tmp_path: Path, reparse_mode: str
