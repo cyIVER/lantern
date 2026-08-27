@@ -106,6 +106,10 @@ services:
     build: ../ui
     image: lantern/cs2-ui:latest
     restart: unless-stopped
+    environment:
+      # The Minecraft UI is bound to the VM's LAN address, not the Docker
+      # host-gateway address. Probe the same address the browser opens.
+      UI_PROBE_HOST: "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}"
     ports:
       - "8090:8090"
     env_file:

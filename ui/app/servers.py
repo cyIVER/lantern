@@ -50,10 +50,8 @@ GAMES: dict[str, dict[str, Any]] = {
         "label": "Minecraft (All the Mods 10)",
         "kind": "pelican",
         "panel_name": "LANtern Minecraft",
-        # A Minecraft control UI is being built and is expected here. Declaring
-        # the port before it exists is deliberate: status() reports whether
-        # anything actually answers, so the landing page can offer the link the
-        # moment it is deployed and never before.
+        # The always-on Minecraft UI is health-gated here so the landing page
+        # offers its link only while the independently deployed service answers.
         "ui_port": 8093,
         "note": "11 GB",
     },
