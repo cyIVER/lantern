@@ -20,6 +20,12 @@
   --green-soft: #e4f0dc;
   --gold:       #d9a441;
   --rust:       #b1502f;
+  /* Button fills, and the ink that goes on them. Separate from --green and
+     --rust, which are tuned for text on parchment rather than as backgrounds. */
+  --go-fill:    #3f6b35;
+  --go-on:      #ffffff;
+  --stop-fill:  #9c4327;
+  --stop-on:    #ffffff;
   --shadow:     0 2px 0 var(--line), 0 6px 16px rgba(92, 58, 30, .10);
 }
 
@@ -37,6 +43,10 @@
     --green-soft: #2c3a26;
     --gold:       #e5b95c;
     --rust:       #e08160;
+    --go-fill:    #7fb469;
+    --go-on:      #1c1710;
+    --stop-fill:  #e08160;
+    --stop-on:    #1c1710;
     --shadow:     0 2px 0 #1a140f, 0 6px 18px rgba(0, 0, 0, .35);
   }
 }
@@ -388,15 +398,15 @@ code { font-family: Silkscreen, monospace; font-size: .82em; }
 /* Power controls. Green to start, red to stop -- the same colours the LANtern
    landing page uses, because they do the same thing to the same server. */
 .btn-go {
-  background: var(--green);
-  border-color: var(--green);
-  color: var(--parchment);
+  background: var(--go-fill);
+  border-color: var(--go-fill);
+  color: var(--go-on);
   box-shadow: 0 2px 0 rgba(0, 0, 0, .28);
 }
 .btn-stop {
-  background: var(--rust);
-  border-color: var(--rust);
-  color: var(--parchment);
+  background: var(--stop-fill);
+  border-color: var(--stop-fill);
+  color: var(--stop-on);
   box-shadow: 0 2px 0 rgba(0, 0, 0, .28);
 }
 .btn-go:hover:not(:disabled),
