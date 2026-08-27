@@ -3,14 +3,16 @@
 Idempotent scripts that finish a Pelican install without clicking through the UI.
 Run them on the VM (`ssh lantern`), from `/opt/lantern/stack`.
 
-> **Most of these still `cd` to the old Windows path.** They were written when the
-> repo lived at `/mnt/c/Users/iveri/Documents/code/lantern/stack` under WSL, and
-> that line is hardcoded near the top of `add-admin.sh`, `configure-menus.sh`,
-> `configure-weaponpaints.sh`, `cs2-status.sh`, `fetch-missing-plugin.sh`,
-> `install-wings-config.sh`, `push-boot-script.sh`, `repair-platform.sh`,
-> `setup-weaponpaints-db.sh` and `test-modes.sh`. On the VM that directory does
-> not exist, so they abort or run against nothing. Point them at
-> `/opt/lantern/stack` before relying on any of them.
+> **One of these still points at the old Windows path.** They were written when
+> the repo lived at `/mnt/c/Users/iveri/Documents/code/lantern/stack` under WSL.
+> All but one now derive their own location
+> (`cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.."`) and work wherever the
+> tree is checked out.
+>
+> The exception is **`push-boot-script.sh`**, which still hardcodes
+> `REPO=/mnt/c/Users/iveri/Documents/code/lantern`. That directory does not exist
+> on the VM, so it runs against nothing. Override `REPO` or fix the line before
+> using it.
 
 | Script | Purpose |
 |---|---|

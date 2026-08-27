@@ -3,7 +3,8 @@
 #
 # WHAT IS WORTH BACKING UP
 #
-# The stack occupies about 84 GB, and roughly 2.7 GB of that matters. CS2's
+# The stack occupies about 84 GB, and roughly 2.7 GB of that matters -- which
+# compresses to a set of about 165 MB, so a backup that small is correct. CS2's
 # game content is 67 GB that SteamCMD will fetch again on demand; Stardew's
 # game install is another 271 MB of the same. What no download can replace:
 #

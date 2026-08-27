@@ -8,8 +8,10 @@
 #   bash bootstrap/push-boot-script.sh
 set -euo pipefail
 
-REPO=/mnt/c/Users/iveri/Documents/code/lantern
-cd "$REPO/stack"
+# Locate the repo from this script's own resolved path rather than a fixed
+# one. The absolute /mnt/c path this used to carry does not exist on the VM.
+REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+cd "$REPO/stack" || exit 1
 
 UUID=$(docker compose exec -T panel php artisan tinker \
   --execute='echo \App\Models\Server::where("name","LANtern CS2")->value("uuid");' 2>/dev/null \

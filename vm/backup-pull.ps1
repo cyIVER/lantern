@@ -26,7 +26,7 @@
   Where to put them. Default D:\LANtern-Backups\data.
 
 .NOTES
-  Register it to run daily with vm\register-backup-task.ps1.
+  windows-setup.ps1 registers this as the daily "LANtern backup" task.
 #>
 [CmdletBinding()]
 param(

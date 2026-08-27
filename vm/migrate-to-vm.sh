@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Move LANtern from Docker-inside-WSL onto the VM built by build-lantern-vm.sh.
 #
+# HISTORICAL. This ran once, on 2026-08-26, and cannot run again: it reads the
+# source stack through WSL's Docker, and WSL was unregistered when the
+# hypervisor was disabled. The hardcoded /mnt/c path below is correct for what
+# this did -- it is the Windows checkout as WSL saw it -- and is not a bug to
+# fix. Kept because it documents exactly what was moved and what was left.
+#
 # WHAT ACTUALLY HAS TO MOVE
 #
 # Most of the 69 GB on disk is CS2 game content that SteamCMD would happily

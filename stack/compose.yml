@@ -89,7 +89,9 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "/var/lib/docker/containers/:/var/lib/docker/containers/"
-      # These resolve into the Ubuntu WSL filesystem -- verified, see
+      # These are ordinary paths on the VM's own filesystem. They used to
+      # resolve into the Ubuntu WSL filesystem, which is why the note below
+      # exists at all -- see
       # docs/DECISIONS.md. Ubuntu's vhdx lives on E:, so game data is on E:.
       - "/etc/pelican/:/etc/pelican/"
       - "/var/lib/pelican/:/var/lib/pelican/"
@@ -135,7 +137,9 @@ networks:
       config:
         # LANTERN: upstream uses 172.20.0.0/16, which collides with the
         # existing memory-system_default network on this host. 172.26.x is
-        # also taken by the WSL Hyper-V vSwitch.
+        # 172.26.x was taken by the WSL Hyper-V vSwitch on the old host.
+        # That is gone, but the subnet stays pinned: changing it would
+        # rebuild every container's network for no benefit.
         - subnet: 172.22.0.0/16
   wings0:
     name: wings0

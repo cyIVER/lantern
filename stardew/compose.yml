@@ -14,7 +14,7 @@
 #   2. Query port moved 27015 -> 27030. CS2 owns 27015 in Pelican.
 #   3. API port moved 8080 -> 8091. Wings owns 8080.
 #   4. ./mods mounted so SMAPI loads them, and memory capped so this cannot
-#      starve the WSL VM the Pelican stack shares.
+#      starve the VM the Pelican stack shares.
 #   5. A `ui` service, which upstream does not have.
 #
 # This runs BESIDE Pelican, not inside it. Stardew has no dedicated server
@@ -74,7 +74,7 @@ services:
       steam-auth:
         condition: service_healthy
     # A whole Stardew game plus a virtual display. 2 GB is comfortable; the cap
-    # exists so a leak cannot take the WSL VM down with it.
+    # exists so a leak cannot take the whole VM down with it.
     mem_limit: 3g
     cpus: 2.0
     restart: unless-stopped
