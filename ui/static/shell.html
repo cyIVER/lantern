@@ -49,25 +49,58 @@
       <span class="hint" id="host-sub">&mdash;</span>
     </div>
 
-    <div class="gauges">
-      <div class="gauge" id="g-mem">
-        <label>Memory</label>
+    <div class="stats" id="stats">
+      <article class="stat" id="s-cpu">
+        <header><label>CPU</label><span class="stat-sub"></span></header>
+        <p class="stat-big">&mdash;</p>
+        <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points=""></polyline>
+        </svg>
+      </article>
+
+      <article class="stat" id="s-mem">
+        <header><label>Memory</label><span class="stat-sub"></span></header>
+        <p class="stat-big">&mdash;</p>
+        <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points=""></polyline>
+        </svg>
+      </article>
+
+      <article class="stat" id="s-disk">
+        <header><label>Disk</label><span class="stat-sub"></span></header>
+        <p class="stat-big">&mdash;</p>
         <div class="bar"><span></span></div>
-        <p class="gval">&mdash;</p>
-      </div>
-      <div class="gauge" id="g-disk">
-        <label>Disk</label>
+      </article>
+
+      <article class="stat" id="s-load">
+        <header><label>Load</label><span class="stat-sub"></span></header>
+        <p class="stat-big">&mdash;</p>
         <div class="bar"><span></span></div>
-        <p class="gval">&mdash;</p>
-      </div>
-      <div class="gauge" id="g-load">
-        <label>Load</label>
+      </article>
+
+      <article class="stat" id="s-swap">
+        <header><label>Swap</label><span class="stat-sub"></span></header>
+        <p class="stat-big">&mdash;</p>
         <div class="bar"><span></span></div>
-        <p class="gval">&mdash;</p>
-      </div>
+      </article>
+
+      <article class="stat" id="s-up">
+        <header><label>Uptime</label><span class="stat-sub"></span></header>
+        <p class="stat-big">&mdash;</p>
+        <p class="stat-foot"></p>
+      </article>
     </div>
 
-    <dl class="facts" id="host-facts"></dl>
+    <div class="split">
+      <div>
+        <h3 class="subhead">Containers</h3>
+        <div id="containers" class="containers"></div>
+      </div>
+      <div>
+        <h3 class="subhead">System</h3>
+        <dl class="facts" id="host-facts"></dl>
+      </div>
+    </div>
   </section>
 </main>
 

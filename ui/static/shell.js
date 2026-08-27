@@ -229,52 +229,144 @@ function fmtUptime(sec) {
   return `${m}m`;
 }
 
+/* Rolling history for the sparklines. Client-side only -- the server keeps no
+   series, so a reload starts the graphs over. That is honest: this is a "what
+   is it doing right now" panel, not monitoring. */
+const HISTORY = 40;
+const series = { cpu: [], mem: [] };
+
+function pushSeries(key, value) {
+  if (value === null || value === undefined) return;
+  const a = series[key];
+  a.push(value);
+  if (a.length > HISTORY) a.shift();
+}
+
+function drawSpark(sel, key) {
+  const line = $(sel).querySelector('polyline');
+  const a = series[key];
+  if (a.length < 2) { line.setAttribute('points', ''); return; }
+  // Fixed 0-100 scale, not auto-scaled: an auto-scaled graph of a machine
+  // doing nothing looks identical to one that is on fire.
+  const step = 100 / (HISTORY - 1);
+  const pts = a.map((v, i) =>
+    `${((i + (HISTORY - a.length)) * step).toFixed(1)},${(28 - (v / 100) * 26 - 1).toFixed(1)}`);
+  line.setAttribute('points', pts.join(' '));
+}
+
 /* Colour by how worried to be, not by the raw number: 80% of a disk is fine,
-   80% of memory on a box that is about to start an 11 GB server is not. */
-function setGauge(id, percent, text, warnAt, badAt) {
-  const el = $(id);
-  const pct = Math.max(0, Math.min(100, percent || 0));
-  const bar = el.querySelector('.bar span');
-  bar.style.width = pct + '%';
-  bar.className = pct >= badAt ? 'bad' : pct >= warnAt ? 'warn' : '';
-  el.querySelector('.gval').textContent = text;
+   80% of memory on a box about to start an 11 GB server is not. */
+function tone(pct, warnAt, badAt) {
+  return pct >= badAt ? 'bad' : pct >= warnAt ? 'warn' : 'ok';
+}
+
+function setStat(sel, { big, sub, foot, pct, warnAt, badAt }) {
+  const el = $(sel);
+  el.querySelector('.stat-big').textContent = big;
+  if (sub !== undefined) el.querySelector('.stat-sub').textContent = sub;
+  const f = el.querySelector('.stat-foot');
+  if (f && foot !== undefined) f.textContent = foot;
+
+  if (pct !== undefined && pct !== null) {
+    const t = tone(pct, warnAt, badAt);
+    el.dataset.tone = t;
+    const bar = el.querySelector('.bar span');
+    if (bar) {
+      bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      bar.className = t;
+    }
+  } else {
+    el.dataset.tone = 'ok';
+  }
+}
+
+function containerRow(c) {
+  const el = document.createElement('div');
+  el.className = 'crow' + (c.state === 'running' ? '' : ' is-down');
+  el.innerHTML = `
+    <span class="cdot"></span>
+    <span class="cname"></span>
+    <span class="cstatus"></span>`;
+  el.querySelector('.cname').textContent = c.name;
+  el.querySelector('.cstatus').textContent = c.status || c.state;
+  el.title = c.image || '';
+  return el;
 }
 
 async function pollHost() {
   let h;
   try {
     h = await api('/api/host');
-  } catch (e) {
+  } catch {
     $('#host-sub').textContent = 'unreachable';
     return;
   }
 
+  // CPU is a rate and has no value until the second poll.
+  pushSeries('cpu', h.cpu_percent);
+  setStat('#s-cpu', {
+    big: h.cpu_percent === null ? '\u2014' : `${h.cpu_percent}%`,
+    sub: `${h.cores} cores`,
+    pct: h.cpu_percent, warnAt: 70, badAt: 90,
+  });
+  drawSpark('#s-cpu', 'cpu');
+
   const m = h.memory;
-  setGauge('#g-mem', m.percent, `${m.used_gb} / ${m.total_gb} GB used`, 75, 90);
+  pushSeries('mem', m.percent);
+  setStat('#s-mem', {
+    big: `${m.used_gb} GB`,
+    sub: `of ${m.total_gb} GB`,
+    pct: m.percent, warnAt: 75, badAt: 90,
+  });
+  drawSpark('#s-mem', 'mem');
 
   if (h.disk.available) {
-    setGauge('#g-disk', h.disk.percent,
-             `${h.disk.used_gb} / ${h.disk.total_gb} GB used`, 80, 92);
+    setStat('#s-disk', {
+      big: `${h.disk.used_gb} GB`,
+      sub: `of ${h.disk.total_gb} GB`,
+      pct: h.disk.percent, warnAt: 80, badAt: 92,
+    });
   } else {
-    setGauge('#g-disk', 0, 'not readable from this container', 80, 92);
+    setStat('#s-disk', { big: '\u2014', sub: 'not readable' });
   }
 
-  // Normalised to cores: 4.0 is idle on 12 cores and on fire on 2.
-  const lpc = h.load_per_core;
-  setGauge('#g-load', lpc * 100,
-           `${h.load.map((x) => x.toFixed(2)).join('  ')}   over ${h.cores} cores`, 70, 100);
+  // Normalised to cores: 4.0 is idle on twelve cores and on fire on two.
+  setStat('#s-load', {
+    big: h.load[0].toFixed(2),
+    sub: `${h.load[1].toFixed(2)} / ${h.load[2].toFixed(2)}`,
+    pct: h.load_per_core * 100, warnAt: 70, badAt: 100,
+  });
+
+  const sw = h.swap;
+  setStat('#s-swap', {
+    big: sw.total_gb ? `${sw.used_gb} GB` : 'none',
+    sub: sw.total_gb ? `of ${sw.total_gb} GB` : 'not configured',
+    // Swap in use on a game host means memory pressure already happened.
+    pct: sw.total_gb ? sw.percent : 0, warnAt: 1, badAt: 25,
+  });
 
   const d = h.docker || {};
+  setStat('#s-up', {
+    big: fmtUptime(h.uptime_seconds),
+    sub: d.hostname || '',
+    foot: d.available ? `${d.containers_running} of ${d.containers_total} containers up` : '',
+  });
+
   $('#host-sub').textContent = d.hostname
-    ? `${d.hostname} \u00b7 up ${fmtUptime(h.uptime_seconds)}`
+    ? `${d.hostname} \u00b7 ${d.os || ''}`.trim()
     : `up ${fmtUptime(h.uptime_seconds)}`;
+
+  $('#containers').replaceChildren(
+    ...(d.containers || []).map(containerRow));
 
   const facts = [
     ['OS', d.os],
     ['Kernel', d.kernel],
     ['Docker', d.docker],
-    ['Containers', d.available ? `${d.containers_running} running of ${d.containers_total}` : null],
-  ].filter(([, v]) => v);
+    ['Images', d.images],
+    ['Memory cached', m.cached_gb ? `${m.cached_gb} GB` : null],
+    ['Disk free', h.disk.available ? `${h.disk.free_gb} GB` : null],
+  ].filter(([, v]) => v !== null && v !== undefined && v !== '');
 
   $('#host-facts').replaceChildren(...facts.flatMap(([k, v]) => {
     const dt = document.createElement('dt'); dt.textContent = k;
@@ -290,4 +382,6 @@ $('#hostline').textContent = location.hostname;
 pollServers();
 pollHost();
 setInterval(() => { if (!busy) pollServers(); }, 6000);
-setInterval(pollHost, 10000);
+// 5s: the CPU figure is the average over the gap, so a long gap smooths away
+// exactly the spikes worth seeing.
+setInterval(pollHost, 5000);
