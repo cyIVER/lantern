@@ -85,6 +85,7 @@ async def pelican(method: str, path: str, **kw) -> Any:
 # the 'status' text table, whose columns shift between CS2 updates and which
 # does not even include SteamIDs for every client.
 def parse_status_json(text: str) -> dict[str, Any]:
+    """Parse CS2 status_json output into server state and client list."""
     try:
         doc = json.loads(text)
     except (json.JSONDecodeError, TypeError):
@@ -116,6 +117,7 @@ STATUS_ROW = re.compile(r"^\s*(?P<slot>\d+)\s+(?P<time>\S+)\s+.*?'(?P<name>[^']*
 
 
 def parse_status_text(text: str) -> list[dict[str, Any]]:
+    """Parse CS2 text-table status output to extract slot, name, and bot flag for each player."""
     block = text
     start = text.find("---------players")
     if start >= 0:
@@ -169,6 +171,7 @@ async def resolve_identities() -> dict[int, str]:
 
 def merge_roster(json_text: str, status_text: str,
                  extra: dict[int, str] | None = None) -> dict[str, Any]:
+    """Combine status outputs into a roster, including SteamIDs when available."""
     info = parse_status_json(json_text)
     by_name = {c.get("name"): c for c in info.get("clients", []) if c.get("name")}
 

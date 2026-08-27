@@ -8,6 +8,7 @@ import router as rt
 
 
 def main() -> int:
+    """Dump router IPv4 configuration and DHCP pool settings."""
     with rt.session() as client:
         st = client.get_ipv4_status()
         print("=== IPv4 status ===")

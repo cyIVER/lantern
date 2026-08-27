@@ -19,6 +19,7 @@ first column below.
 | `backup-pull.ps1` | Windows | Runs `backup-all.sh` on the VM and copies the result to `D:\LANtern-Backups\data`. The scheduled task runs this. |
 | `export-vm-image.ps1` | Windows | Exports the whole VM to a `.ova` in `D:\LANtern-Backups\images`. The VM must be off. |
 | `backup-all.sh` | the VM | The nightly data backup: databases, node token, worlds, saves, `.env` files. |
+| `restore-schematic-library.sh` | the VM | Guarded restore for the schematic library volume; creates a pre-restore safety copy and never stops Minecraft or Wings. |
 | `install-vm-services.sh` | the VM | Installs `lantern-dbnet.timer`, creates the swap file, symlinks `lantern` onto `PATH`. |
 | `normalize-line-endings.sh` | the VM | Strips CR from a tree copied over from Windows. |
 | `build-lantern-vm.sh` | historical | Built the VM from Ubuntu's cloud image. |
@@ -94,6 +95,7 @@ The set is roughly 165 MB and covers everything that cannot be downloaded again:
 | Minecraft world | quiesced over RCON first, so nobody is kicked |
 | CS2 `cfg` + `addons` | CounterStrikeSharp, WeaponPaints and their configuration |
 | Stardew saves + config | the farm, and the SMAPI config beside it |
+| schematic library | the persistent `lantern-schematic-viewer-data` volume plus the Minecraft UI stack configuration and file secrets |
 | `.env` files | gitignored, so they exist nowhere else |
 
 CS2's ~67 GB of game content and Stardew's game install are deliberately not in
@@ -114,6 +116,21 @@ Or, from a shell on the VM, just the VM-side half:
 ```bash
 bash /opt/lantern/vm/backup-all.sh
 ```
+
+Restore a schematic-library archive with an explicit replacement confirmation:
+
+```bash
+sudo /opt/lantern/vm/restore-schematic-library.sh \
+  /absolute/path/to/schematic-viewer-data.tgz \
+  --confirm-replace
+```
+
+The backup includes the viewer's typed/versioned manifest and a SHA-256 companion.
+The restore accepts archives only from the approved backup root, verifies both,
+validates the regular-file tree in staging, and atomically snapshots the current
+volume before replacing only `lantern-schematic-viewer-data`. If replacement or
+rollback cannot complete cleanly, the private viewer stays stopped rather than
+serving mixed data. Minecraft, Wings, and the panel are not touched.
 
 `stack/bootstrap/backup.sh` is the single-game version of the same idea — quick
 to reach for before a risky change to one server. It writes to

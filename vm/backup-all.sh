@@ -13,6 +13,7 @@
 #   /etc/pelican        Wings' node token. Without it the panel cannot re-adopt
 #                       its own node and every server becomes uncontrollable
 #   Minecraft world     the world, and nothing else in that directory matters
+#   schematic library   user-curated schematics and their generated previews
 #   CS2 cfg + addons    CounterStrikeSharp, WeaponPaints and their configuration
 #   Stardew saves       the farm, plus the SMAPI config beside it
 #   .env files          gitignored, so they exist nowhere else
@@ -44,6 +45,38 @@ step() { printf '\n\033[36m%s\033[0m\n' "$*"; }
 
 FAILED=0
 fail() { bad "$*"; FAILED=$((FAILED + 1)); }
+
+# If the process is interrupted after the schematic sidecar is stopped, bring
+# that sidecar back. This deliberately names only schematic-viewer: the
+# Minecraft game, Wings, and the public Minecraft UI are never stopped here.
+SCHEMATIC_VIEWER_WAS_RUNNING=false
+SCHEMATIC_BACKUP_TMP=
+SCHEMATIC_ARCHIVE_TMP=
+SCHEMATIC_CHECKSUM_TMP=
+SCHEMATIC_VIEWER_IMAGE='ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:d8dcef565e7da6c7536b591cc9cbe0471637364ffc22ae40590cd2c0910484a3'
+SCHEMATIC_VIEWER_UID=
+SCHEMATIC_VIEWER_GID=
+restart_schematic_viewer() {
+  if [ "$SCHEMATIC_VIEWER_WAS_RUNNING" = true ]; then
+    if docker compose start schematic-viewer >/dev/null 2>&1; then
+      note '  schematic-viewer restarted'
+    else
+      fail '  schematic-viewer did not restart'
+    fi
+    SCHEMATIC_VIEWER_WAS_RUNNING=false
+  fi
+  if [ -n "$SCHEMATIC_BACKUP_TMP" ]; then
+    # The typed backup runs as the viewer UID, which may differ from the host
+    # operator, so cleanup retains the same sudo boundary used for staging.
+    sudo rm -rf -- "$SCHEMATIC_BACKUP_TMP"
+    SCHEMATIC_BACKUP_TMP=
+  fi
+  [ -n "$SCHEMATIC_ARCHIVE_TMP" ] && rm -f -- "$SCHEMATIC_ARCHIVE_TMP"
+  [ -n "$SCHEMATIC_CHECKSUM_TMP" ] && rm -f -- "$SCHEMATIC_CHECKSUM_TMP"
+  SCHEMATIC_ARCHIVE_TMP=
+  SCHEMATIC_CHECKSUM_TMP=
+}
+trap restart_schematic_viewer EXIT
 
 cd "$STACK" || { bad "no stack at $STACK"; exit 1; }
 sudo mkdir -p "$OUT" && sudo chown "$(id -u):$(id -g)" "$OUT" || { bad "cannot write $OUT"; exit 1; }
@@ -112,6 +145,105 @@ else
   note '  no Minecraft server directory -- skipping'
 fi
 
+# ------------------------------------------------------- schematic library
+# The viewer is the only process that writes this volume. Stop just that
+# private sidecar for a consistent archive; the :8093 UI stays up and reports
+# the library unavailable for the few seconds this takes. Minecraft and Wings
+# are unrelated and remain untouched.
+note 'schematic library'
+SCHEMATIC_VOLUME='lantern-schematic-viewer-data'
+if docker volume inspect "$SCHEMATIC_VOLUME" >/dev/null 2>&1; then
+  SCHEMATIC_VIEWER_CONTAINER=
+  SCHEMATIC_VIEWER_RUNNING=
+  SCHEMATIC_VIEWER_STATE_KNOWN=false
+  if SCHEMATIC_VIEWER_CONTAINER=$(docker compose ps -q schematic-viewer 2>/dev/null); then
+    if [ -z "$SCHEMATIC_VIEWER_CONTAINER" ]; then
+      SCHEMATIC_VIEWER_STATE_KNOWN=true
+      SCHEMATIC_VIEWER_RUNNING=false
+    elif SCHEMATIC_VIEWER_RUNNING=$(docker inspect -f '{{.State.Running}}' "$SCHEMATIC_VIEWER_CONTAINER" 2>/dev/null) \
+         && { [ "$SCHEMATIC_VIEWER_RUNNING" = true ] || [ "$SCHEMATIC_VIEWER_RUNNING" = false ]; }; then
+      SCHEMATIC_VIEWER_STATE_KNOWN=true
+    else
+      fail '  schematic-viewer state could not be determined; refusing a live volume copy'
+    fi
+  else
+    fail '  schematic-viewer container lookup failed; refusing a live volume copy'
+  fi
+
+  if [ "$SCHEMATIC_VIEWER_STATE_KNOWN" = true ]; then
+    if viewer_identity=$(docker run --rm --network none --read-only --cap-drop ALL \
+       --security-opt no-new-privileges --entrypoint sh "$SCHEMATIC_VIEWER_IMAGE" \
+       -ec 'printf "%s:%s\n" "$(id -u)" "$(id -g)"'); then
+      SCHEMATIC_VIEWER_UID=${viewer_identity%%:*}
+      SCHEMATIC_VIEWER_GID=${viewer_identity##*:}
+      case "$SCHEMATIC_VIEWER_UID:$SCHEMATIC_VIEWER_GID" in
+        *[!0-9:]* | :* | *:)
+          SCHEMATIC_VIEWER_STATE_KNOWN=false
+          fail '  released viewer image has an invalid runtime identity'
+          ;;
+      esac
+    else
+      SCHEMATIC_VIEWER_STATE_KNOWN=false
+      fail '  released viewer image runtime identity could not be determined'
+    fi
+  fi
+
+  if [ "$SCHEMATIC_VIEWER_STATE_KNOWN" = true ] && [ "$SCHEMATIC_VIEWER_RUNNING" = true ]; then
+      # Record restart intent before stop: EXIT recovery must also cover an
+      # interrupt while Docker is waiting for the container's grace period.
+      SCHEMATIC_VIEWER_WAS_RUNNING=true
+      if docker compose stop schematic-viewer >/dev/null 2>&1; then
+        SCHEMATIC_VIEWER_RUNNING=false
+        note '  schematic-viewer stopped; Minecraft, Wings, and :8093 remain up'
+      else
+        # A failed stop may still have stopped the container. Prevent backup
+        # and make the EXIT path perform an idempotent start either way.
+        SCHEMATIC_VIEWER_STATE_KNOWN=false
+        fail '  schematic-viewer could not be stopped; refusing a live volume copy'
+      fi
+  fi
+
+  if [ "$SCHEMATIC_VIEWER_STATE_KNOWN" = true ] && [ "$SCHEMATIC_VIEWER_RUNNING" = false ]; then
+    if ! SCHEMATIC_BACKUP_TMP=$(mktemp -d "$OUT/.schematic-viewer-backup.XXXXXX") \
+       || ! SCHEMATIC_ARCHIVE_TMP=$(mktemp "$OUT/.schematic-viewer-data.XXXXXX.tgz") \
+       || ! SCHEMATIC_CHECKSUM_TMP=$(mktemp "$OUT/.schematic-viewer-data.XXXXXX.sha256"); then
+      fail '  could not allocate schematic-library backup staging files'
+      restart_schematic_viewer
+    elif ! sudo chown "$SCHEMATIC_VIEWER_UID:$SCHEMATIC_VIEWER_GID" "$SCHEMATIC_BACKUP_TMP"; then
+      fail '  could not grant the released viewer access to backup staging'
+      restart_schematic_viewer
+    elif docker run --rm --network none --read-only --cap-drop ALL \
+       --security-opt no-new-privileges --user "$SCHEMATIC_VIEWER_UID:$SCHEMATIC_VIEWER_GID" \
+       --env DATA_DIR=/data \
+       --volume "$SCHEMATIC_VOLUME":/data:ro \
+       --volume "$SCHEMATIC_BACKUP_TMP":/backup \
+       "$SCHEMATIC_VIEWER_IMAGE" \
+       node tools/library_data.js backup /backup/library >/dev/null \
+       && sudo tar -C "$SCHEMATIC_BACKUP_TMP/library" -czf "$SCHEMATIC_ARCHIVE_TMP" . \
+       && sudo chown "$(id -u):$(id -g)" "$SCHEMATIC_ARCHIVE_TMP" \
+       && [ -s "$SCHEMATIC_ARCHIVE_TMP" ]; then
+      if archive_digest=$(sha256sum "$SCHEMATIC_ARCHIVE_TMP" | awk '{print $1}') \
+         && [ -n "$archive_digest" ] \
+         && printf '%s  schematic-viewer-data.tgz\n' "$archive_digest" > "$SCHEMATIC_CHECKSUM_TMP" \
+         && chmod 600 "$SCHEMATIC_ARCHIVE_TMP" "$SCHEMATIC_CHECKSUM_TMP" \
+         && mv -- "$SCHEMATIC_ARCHIVE_TMP" "$OUT/schematic-viewer-data.tgz" \
+         && { SCHEMATIC_ARCHIVE_TMP=; mv -- "$SCHEMATIC_CHECKSUM_TMP" "$OUT/schematic-viewer-data.tgz.sha256"; }; then
+        SCHEMATIC_CHECKSUM_TMP=
+        ok "  schematic-viewer-data.tgz ($(du -h "$OUT/schematic-viewer-data.tgz" | cut -f1))"
+      else
+        rm -f -- "$OUT/schematic-viewer-data.tgz" "$OUT/schematic-viewer-data.tgz.sha256"
+        fail '  schematic library archive publication'
+      fi
+    else
+      rm -f -- "$OUT/schematic-viewer-data.tgz" "$OUT/schematic-viewer-data.tgz.sha256"
+      fail '  schematic library volume'
+    fi
+  fi
+  restart_schematic_viewer
+else
+  note "  no $SCHEMATIC_VOLUME -- skipping (expected before the release gate)"
+fi
+
 # --------------------------------------------------------------------- cs2
 note 'CS2 config and plugins'
 CS2_CFG="/var/lib/pelican/volumes/${CS2_UUID}/game/csgo"
@@ -141,9 +273,13 @@ done
 # Gitignored, so these exist nowhere else. Mode 600: they hold every password
 # in the stack.
 note 'secrets and config'
-if tar -C /opt/lantern -czf "$OUT/config.tgz" \
-     stack/.env stack/.weaponpaints-db ui/.env stardew/.env \
-     stardew/settings stardew/mods 2>/dev/null; then
+CONFIG_PATHS=(stack/.env stack/.weaponpaints-db ui/.env stardew/.env stardew/settings stardew/mods)
+if [ -d /opt/lantern/stack/secrets ]; then
+  CONFIG_PATHS+=(stack/secrets)
+else
+  note '  no stack/secrets yet -- expected before the Minecraft UI release gate'
+fi
+if tar -C /opt/lantern -czf "$OUT/config.tgz" "${CONFIG_PATHS[@]}" 2>/dev/null; then
   chmod 600 "$OUT/config.tgz"
   ok '  config.tgz (mode 600)'
 else

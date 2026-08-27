@@ -1,0 +1,1 @@
+"""LANtern Minecraft UI."""

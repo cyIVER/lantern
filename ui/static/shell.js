@@ -21,13 +21,12 @@ const UIS = {
     href: () => '/cs2',
     blurb: 'Maps, game modes, bots, match control and loadouts.',
   },
-  // The Minecraft control UI is being built separately, on 8093. The link is
-  // only shown once the server has confirmed something answers there, so this
-  // can sit here before it is deployed without offering a dead button.
+  // Port 8093 is an always-on Minecraft product UI, independent of game power.
+  // The link is health-gated only so the landing page never offers a dead URL.
   minecraft: {
-    ui: 'Minecraft control',
+    ui: 'Minecraft home',
     href: () => `http://${location.hostname}:8093/`,
-    blurb: 'Console, files and mods are in the Pelican panel until its UI lands.',
+    blurb: 'Shared schematics stay available when Minecraft is stopped; console, files and mods remain in Pelican.',
   },
   stardew: {
     ui: 'Stardew control',
@@ -173,7 +172,9 @@ function serverCard(s) {
     dead.className = 'btn tiny';
     dead.textContent = meta.ui;
     dead.disabled = true;
-    dead.title = 'That UI is not running. Start the game and it comes up with it.';
+    dead.title = s.id === 'minecraft'
+      ? 'The always-on Minecraft UI is unavailable; check its service on port 8093.'
+      : 'That UI is not running. Start the game and it comes up with it.';
     actions.append(dead);
   }
   return el;

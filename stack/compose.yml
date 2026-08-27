@@ -126,10 +126,109 @@ services:
       # container -- the game runs on Wings' own network.
       - "host.docker.internal:host-gateway"
 
+  # Minecraft's product UI is intentionally independent of the game process.
+  # It stays reachable when the server is stopped and degrades cleanly if the
+  # private schematic sidecar is unavailable.
+  minecraft-ui:
+    build: ../minecraft-ui
+    image: lantern/minecraft-ui:latest
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8093:8093"
+    environment:
+      SCHEMATIC_VIEWER_URL: http://schematic-viewer:4173
+      MINECRAFT_ADMIN_PASSWORD_HASH_FILE: /run/secrets/minecraft_admin_password_hash
+      MINECRAFT_SESSION_SECRET_FILE: /run/secrets/minecraft_session_secret
+      SCHEMATIC_VIEWER_ADMIN_TOKEN_FILE: /run/secrets/schematic_viewer_admin_token
+      MINECRAFT_SESSION_TTL_SECONDS: "28800"
+      MINECRAFT_ALLOW_INSECURE_ADMIN: "false"
+      # LANtern is deliberately plain HTTP on the private LAN. Change this to
+      # true only after port 8093 is served through HTTPS.
+      MINECRAFT_SECURE_COOKIE: "${MINECRAFT_SECURE_COOKIE:-false}"
+    secrets:
+      - minecraft_admin_password_hash
+      - minecraft_session_secret
+      - schematic_viewer_admin_token
+    group_add:
+      # Compose file secrets are bind mounts outside Swarm. Preserve non-root
+      # containers by granting only the host secret-file group, never world read.
+      - "${LANTERN_SECRET_GID:-1000}"
+    networks:
+      - minecraft-edge
+      - schematic-backplane
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 128
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8093/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # Create Schematic Viewer is a private implementation detail of minecraft-ui.
+  # No host port, Docker socket, game volume, or Wings network is attached.
+  schematic-viewer:
+    image: "ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:d8dcef565e7da6c7536b591cc9cbe0471637364ffc22ae40590cd2c0910484a3"
+    restart: unless-stopped
+    init: true
+    expose:
+      - "4173"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4173"
+      DATA_DIR: /data
+      LIBRARY_WRITE_MODE: trusted-proxy
+      LIBRARY_ADMIN_TOKEN_FILE: /run/secrets/schematic_viewer_admin_token
+    volumes:
+      - schematic-viewer-data:/data
+    secrets:
+      - schematic_viewer_admin_token
+    group_add:
+      - "${LANTERN_SECRET_GID:-1000}"
+    networks:
+      - schematic-backplane
+    read_only: true
+    tmpfs:
+      - /app/.tmp:rw,noexec,nosuid,size=512m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    cpus: 2.00
+    pids_limit: 256
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/readyz').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
 volumes:
   pelican-data:
   pelican-logs:
   pelican-db:
+  schematic-viewer-data:
+    name: lantern-schematic-viewer-data
+
+secrets:
+  minecraft_admin_password_hash:
+    file: ./secrets/minecraft-admin-password-hash
+  minecraft_session_secret:
+    file: ./secrets/minecraft-session-secret
+  schematic_viewer_admin_token:
+    file: ./secrets/schematic-viewer-admin-token
 
 networks:
   default:
@@ -141,6 +240,9 @@ networks:
         # That is gone, but the subnet stays pinned: changing it would
         # rebuild every container's network for no benefit.
         - subnet: 172.22.0.0/16
+  schematic-backplane:
+    internal: true
+  minecraft-edge:
   wings0:
     name: wings0
     driver: bridge

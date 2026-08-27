@@ -1,16 +1,19 @@
 # The control UIs
 
-One FastAPI service on `:8090` serves two pages, and a second application on
-`:8092` serves the farm.
+One FastAPI service on `:8090` serves two pages, a second application on `:8092`
+serves the farm, and the release-gated Minecraft application is prepared for
+`:8093`.
 
 | | | |
 |---|---|---|
 | **LANtern landing page** | <http://192.168.0.115:8090/> | Which game is running, buttons to switch, and the host dashboard |
 | **CS2 control** | <http://192.168.0.115:8090/cs2> | Players, maps, mode, match control, loadouts, RCON console |
 | **Stardew control** | <http://192.168.0.115:8092> | Its own application in `stardew-ui/` — see [STARDEW.md](STARDEW.md) |
-| **Minecraft control** | `:8093` | Reserved, being built separately. Not deployed |
+| **Minecraft UI** | <http://192.168.0.115:8093> | Always-on Minecraft home and `/schematics/` workspace. Implemented; deployment pending the release gate |
 
-No login on any of them.
+The landing, CS2 and Stardew UIs have no login. Minecraft schematic browsing is
+also anonymous, but persistent library curation has a separate administrator
+session owned by the Minecraft UI.
 
 **The CS2 UI moved.** It used to be served at `:8090` itself; the landing page
 took the root and the CS2 UI is at `/cs2`. Nothing else moved — `/api/...`,
@@ -80,8 +83,30 @@ to make visible is the one restarting in a loop.
 The Minecraft UI link is gated on a **server-side TCP probe** of `:8093`. It has to
 be server-side: a cross-origin probe from the page cannot tell "nothing listening"
 from "listening, but that is not an image", so it would report every port as up.
-A TCP connect knows the difference, which is why the link can sit in the code
-before the UI exists without ever offering a dead button.
+A TCP connect knows the difference. The application is now implemented, but the
+probe will continue hiding its link until the release gate actually deploys it.
+
+## Minecraft UI and SchematicWorkspace
+
+The Minecraft UI is its own FastAPI application and remains up independently of
+the Minecraft game. It exposes only port `8093`. `/schematics/` is a
+prefix-stripping, streaming reverse proxy to a Create Schematic Viewer sidecar
+on private port `4173`; that sidecar has no host port, Docker socket, Wings
+network or game-volume mount.
+
+Anonymous requests can browse, inspect, convert and download schematics. When
+the UI is served through HTTPS, administrator sign-in validates a signed session
+and injects a file-mounted trust token only on the private hop to the viewer. It
+strips any client-supplied trust, forwarding, cookie and authorization headers.
+Persistent library data is isolated in `lantern-schematic-viewer-data` and is
+included in the nightly backup.
+
+LANtern is plain HTTP by design, so administrator sign-in and all mutations are
+disabled by default; anonymous access remains useful. Exact same-origin checks
+are defense in depth, not a replacement for transport security. Administration
+requires HTTPS with `MINECRAFT_SECURE_COOKIE=true`; the insecure override is for
+isolated CI only. Port 8093 is LAN-only and must never be internet-published in
+this configuration.
 
 ---
 

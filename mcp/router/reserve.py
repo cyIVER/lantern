@@ -28,6 +28,7 @@ def normalize_mac(mac: str, sample: str | None) -> str:
 
 
 def show(reservations, leases) -> None:
+    """Display current DHCP reservations and active leases."""
     print(f"\nCurrent reservations ({len(reservations)}):")
     if not reservations:
         print("   (none)")
@@ -41,6 +42,7 @@ def show(reservations, leases) -> None:
 
 
 def main() -> int:
+    """List existing DHCP reservations or add a new one (dry-run by default)."""
     p = argparse.ArgumentParser(description="Inspect or add a DHCP reservation.")
     p.add_argument("--mac")
     p.add_argument("--ip")

@@ -10,6 +10,7 @@ import credentials
 import router as rt
 
 def main() -> int:
+    """Test the router connection and print firmware, model, and client count."""
     print(f"Router host   : {rt.HOST}")
     print(f"Password set  : {credentials.is_configured()}")
     if not credentials.is_configured():

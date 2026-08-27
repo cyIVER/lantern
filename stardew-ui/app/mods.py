@@ -65,6 +65,7 @@ def _read_manifest(d: pathlib.Path) -> dict[str, Any]:
 
 
 def list_mods() -> dict[str, Any]:
+    """Return a list of all SMAPI mods with their metadata, enabled state, and dependencies."""
     if not MODS_DIR.is_dir():
         return {"ok": False, "error": f"{MODS_DIR} is not mounted", "mods": []}
 
@@ -98,6 +99,7 @@ def list_mods() -> dict[str, Any]:
 
 
 def set_enabled(folder: str, enabled: bool) -> dict[str, Any]:
+    """Enable or disable a mod by renaming its folder (prepend/remove leading dot)."""
     _safe(folder)
     src = MODS_DIR / folder
     if not src.is_dir():

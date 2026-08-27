@@ -39,6 +39,7 @@ class LanternError(RuntimeError):
     """The control service could not be reached or refused."""
 
     def __init__(self, message: str, status: int = 503, detail: Any = None):
+        """Initialize the LANtern control service error with status code and optional detail."""
         super().__init__(message)
         self.status = status
         self.detail = detail

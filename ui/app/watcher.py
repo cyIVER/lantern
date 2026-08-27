@@ -62,10 +62,12 @@ STATS: dict[str, Any] = {"connected": False, "lines": 0, "last_line": "", "chat"
 
 
 def steam64(acct: str | int) -> str:
+    """Convert a Steam account ID to its 64-bit SteamID."""
     return str(int(acct) + STEAM64_BASE)
 
 
 def strip_ansi(s: str) -> str:
+    """Remove ANSI SGR color and style sequences from console output."""
     return re.sub(r"\x1b\[[0-9;]*m", "", s)
 
 
@@ -173,5 +175,6 @@ async def run() -> None:
 
 
 def snapshot() -> dict[str, Any]:
+    """Return the current state of the console watcher: connection status, learned identities, and stats."""
     return {**STATS, "identities": dict(IDENTITIES),
             "slots": {str(k): v for k, v in SLOTS.items()}}

@@ -241,6 +241,7 @@ async def status_all() -> list[dict[str, Any]]:
 
 
 def running_ids(rows: list[dict[str, Any]]) -> list[str]:
+    """Extract game IDs from status rows where the server is running or starting."""
     return [r["id"] for r in rows if r["state"] in ("running", "starting")]
 
 
