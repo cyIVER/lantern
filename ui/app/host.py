@@ -38,6 +38,8 @@ from typing import Any
 
 import httpx
 
+from . import servers
+
 DOCKER_SOCK = os.environ.get("DOCKER_SOCK", "/var/run/docker.sock")
 
 # Bind-mounted from the host, so statvfs here describes the host's disk.
@@ -132,10 +134,17 @@ async def _docker() -> dict[str, Any]:
     except Exception as exc:
         return {"available": False, "detail": str(exc)}
 
+    # Wings names a game server's container after its UUID, which tells the
+    # reader nothing. Trade it for the panel's name where we know one.
+    try:
+        by_uuid = {v: k for k, v in (await servers._panel_servers()).items()}
+    except Exception:
+        by_uuid = {}
+
     # Name, state and how long -- enough to spot the one that is restarting in
-    # a loop, which is the failure this list is here to make visible.
+    # a loop, which is the failure this list exists to make visible.
     rows = sorted(
-        ({"name": (x.get("Names") or ["?"])[0].lstrip("/"),
+        ({"name": by_uuid.get(n := (x.get("Names") or ["?"])[0].lstrip("/"), n),
           "state": x.get("State", "?"),
           "status": x.get("Status", ""),
           "image": (x.get("Image") or "").split("@")[0]}
