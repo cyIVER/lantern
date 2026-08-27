@@ -155,10 +155,10 @@ section until the release gate has separately approved the viewer release,
 exact image digest, secret creation and VM cutover.
 
 The viewer image is hard-pinned in `compose.yml` to the independently verified
-v1.0.0 release index:
+v1.0.1 release index:
 
 ```text
-ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:d8dcef565e7da6c7536b591cc9cbe0471637364ffc22ae40590cd2c0910484a3
+ghcr.io/scotsgamez/create-schematic-viewer:v1.0.1@sha256:d5501af9de95f9b89484ae4e4dbea098b0cdd3e86af3b19e50976855b533444c
 ```
 
 Changing the viewer is a reviewed source change; `latest`, a bare mutable tag,

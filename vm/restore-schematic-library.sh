@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VIEWER_IMAGE='ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:d8dcef565e7da6c7536b591cc9cbe0471637364ffc22ae40590cd2c0910484a3'
+VIEWER_IMAGE='ghcr.io/scotsgamez/create-schematic-viewer:v1.0.1@sha256:d5501af9de95f9b89484ae4e4dbea098b0cdd3e86af3b19e50976855b533444c'
 ALPINE_IMAGE='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 STACK=${LANTERN_STACK:-/opt/lantern/stack}
 BACKUP_ROOT=${LANTERN_BACKUP_DIR:-/var/backups/lantern}

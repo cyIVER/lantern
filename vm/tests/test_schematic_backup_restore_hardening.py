@@ -13,8 +13,8 @@ ROOT = Path(__file__).parents[2]
 BACKUP_SCRIPT = ROOT / "vm" / "backup-all.sh"
 RESTORE_SCRIPT = ROOT / "vm" / "restore-schematic-library.sh"
 VIEWER_IMAGE = (
-    "ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@"
-    "sha256:d8dcef565e7da6c7536b591cc9cbe0471637364ffc22ae40590cd2c0910484a3"
+    "ghcr.io/scotsgamez/create-schematic-viewer:v1.0.1@"
+    "sha256:d5501af9de95f9b89484ae4e4dbea098b0cdd3e86af3b19e50976855b533444c"
 )
 
 
