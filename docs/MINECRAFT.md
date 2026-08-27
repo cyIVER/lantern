@@ -12,7 +12,7 @@ Java 21, roughly 485 mods, pinned to one exact CurseForge release.
 | RCON | `25575`, LAN only |
 | Slots | 8 |
 | Server heap | 10 GB (11 GB container) |
-| Control UI | `192.168.0.115:8093` — **not built yet**, see below |
+| Minecraft UI | `192.168.0.115:8093` — implemented here; deployment pending the release gate |
 
 > **Nobody has actually played on it.** The server installs, boots, loads the
 > world, answers RCON and accepts a TCP connection on 25565 — those are what
@@ -121,18 +121,35 @@ docker compose exec -T panel php artisan tinker --execute="
 "
 ```
 
-### The control UI that is not here yet
+### Minecraft UI and shared schematics
 
-Port **8093** is reserved for a Minecraft control UI, being built separately. It
-is not deployed, and nothing in this repository serves it.
+The repository now contains an always-on Minecraft UI for port **8093**. Its
+home page points players to the server and its `/schematics/` workspace embeds
+Create Schematic Viewer for catalogue browsing, 3D inspection, conversion and
+downloads. Reading the shared library is anonymous. Adding a schematic, adding
+a version, restoring or removing one requires the UI's administrator sign-in.
+Pelican remains the place for the game console, files and mod management; power
+remains on the LANtern landing page.
 
-The LANtern landing page already carries the link, gated on a **server-side TCP
-probe** of that port — so the button appears the moment something answers there
-and never before. Declaring the port ahead of the service is deliberate; the
-alternative is a link that silently goes nowhere.
+The viewer is a private sidecar on the internal Docker network. Port `4173` is
+not published, the browser never receives its trust token, and its persistent
+data lives in the named volume `lantern-schematic-viewer-data`. Both the UI and
+viewer use `restart: unless-stopped`, independently of the game process, so the
+schematic library remains available when Minecraft is stopped.
 
-Until then, the console, files and mod management are in the Pelican panel, and
-power is on the landing page.
+> **Release status:** this feature is implemented in the repository but has not
+> been deployed to the VM. Port 8093 remains unavailable until the separate
+> release gate approves an immutable viewer image digest, creates the three
+> file secrets, and starts only `schematic-viewer` and `minecraft-ui`. The
+> landing page's existing server-side TCP probe will expose the link only after
+> the UI answers. That selective deployment does not restart Wings or the
+> running Minecraft server.
+
+The admin session cookie is `HttpOnly` and `SameSite=Strict`, but LANtern still
+uses plain HTTP on a trusted private LAN. It therefore cannot safely set the
+cookie's `Secure` flag; anyone able to observe LAN traffic could observe the
+session. Do not expose port 8093 to the internet. Put the UI behind HTTPS and set
+`MINECRAFT_SECURE_COOKIE=true` before using it outside this LAN.
 
 ---
 
@@ -145,6 +162,13 @@ which is worse than no backup because you find out weeks later.
 
 `logs/` and `crash-reports/` are excluded. Nothing else in the server directory is
 backed up — the 1.1 GB of mod jars is a re-download, the world is not.
+
+After the Minecraft UI release, the same job also archives the schematic
+library as `schematic-viewer-data.tgz`. It briefly stops and restarts only the
+private `schematic-viewer` container for a consistent volume snapshot. The
+public UI stays up, and neither Wings nor the running Minecraft server is
+stopped. The three UI/viewer secret files are included inside the mode-600
+`config.tgz` archive.
 
 Details, including how to restore: [../vm/README.md](../vm/README.md).
 

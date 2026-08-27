@@ -7,7 +7,7 @@ lives in exactly one of three places:
 
 | Store | Used by | Why there |
 |---|---|---|
-| Gitignored `.env` file on the VM | Docker Compose, the control UI | Read at container start |
+| Gitignored `.env` or `stack/secrets/` file on the VM | Docker Compose, the control UIs | Read at container start; Docker mounts the Minecraft files read-only |
 | GitHub Actions secret | CI workflows | Encrypted at rest, not exposed to fork pull requests |
 | Windows Credential Manager | Router MCP server | DPAPI-encrypted; no plaintext on disk at all |
 
@@ -23,7 +23,8 @@ lives in a Windows store.
 > On the VM that archive is written mode 600. On D: it is an ordinary file with
 > ordinary permissions. **Treat `D:\LANtern-Backups` as a secret store**: it holds
 > every database password, the RCON password, the Pelican API key, the CurseForge
-> key and the Steam refresh token, in fourteen dated copies. Do not sync that
+> key, the Steam refresh token and, after the Minecraft UI release, its three
+> file secrets, in fourteen dated copies. Do not sync that
 > folder anywhere, and if you ever hand someone a backup set, hand them one with
 > `config.tgz` removed.
 >
@@ -194,7 +195,64 @@ prints its own argv to the console, which leaks them into the log — that is wh
 
 ---
 
-## 5. Router password
+## 5. Minecraft UI and schematic-library secrets
+
+The release-gated Minecraft UI uses three files under
+`/opt/lantern/stack/secrets/`. None belongs in `.env`, Git, a container image or
+a browser response.
+
+| File | Purpose | Consumers |
+|---|---|---|
+| `minecraft-admin-password-hash` | Argon2 hash of the curation password; never the password itself | `minecraft-ui` |
+| `minecraft-session-secret` | HMAC-signs the eight-hour administrator cookie | `minecraft-ui` |
+| `schematic-viewer-admin-token` | Authenticates the UI's private mutation requests | `minecraft-ui`, `schematic-viewer` |
+
+Create them only during the approved release gate, after the Minecraft UI image
+has been built. The password is read from the terminal and the hash is written
+directly into the mounted directory; it never appears in shell history or
+process arguments.
+
+```bash
+cd /opt/lantern/stack
+umask 077
+install -d -m 700 secrets
+
+docker compose build minecraft-ui
+docker run --rm -it --user "$(id -u):$(id -g)" \
+  -v "$PWD/secrets:/secrets" \
+  --entrypoint python lantern/minecraft-ui:latest -c \
+  'from getpass import getpass; from pathlib import Path; from argon2 import PasswordHasher; Path("/secrets/minecraft-admin-password-hash").write_text(PasswordHasher().hash(getpass("New Minecraft admin password: ")) + "\n")'
+
+openssl rand -base64 48 > secrets/minecraft-session-secret
+openssl rand -base64 48 > secrets/schematic-viewer-admin-token
+chmod 600 secrets/*
+```
+
+The current LANtern deployment is plain HTTP. The signed session cookie is
+`HttpOnly` and `SameSite=Strict`, but deliberately lacks `Secure` because a
+browser would not return a Secure cookie over `http://192.168.0.115:8093`.
+Anyone able to observe LAN traffic may be able to observe that session. Never
+publish port 8093 to the internet; enable HTTPS and set
+`MINECRAFT_SECURE_COOKIE=true` before extending the trust boundary.
+
+Rotate one secret at a time:
+
+- **Admin password:** rerun the `docker run` command, then
+  `docker compose up -d --no-deps --force-recreate minecraft-ui`.
+- **Session secret:** replace it with `openssl rand -base64 48`, set mode 600,
+  and recreate only `minecraft-ui`. Existing admin sessions are invalidated.
+- **Viewer token:** replace it with `openssl rand -base64 48`, set mode 600,
+  then run `docker compose up -d --no-deps --force-recreate schematic-viewer minecraft-ui`
+  so both consumers change together.
+
+These commands never restart Wings or the Minecraft game. The viewer-token
+rotation briefly interrupts only the schematic workspace. All three files are
+included in the nightly mode-600 `config.tgz`; old backup sets retain old values
+and must be handled as described under [If a secret leaks](#if-a-secret-leaks).
+
+---
+
+## 6. Router password
 
 Not in `.env`. Not in the repo. The router MCP server stores it in **Windows
 Credential Manager**, encrypted at rest with DPAPI under your user account. No
@@ -246,6 +304,8 @@ python -m mcp.router.set_password                # optional
    - Discord: **Delete Webhook** in channel settings, make a new one
    - Steam: change the password, then **Deauthorize all devices** in Steam Guard settings
    - RCON: `rotate-rcon.php`
+   - Minecraft UI: rotate the affected file with the commands in section 5;
+     rotate both the session secret and viewer token if the leaked value is unknown
 2. Then remove it from history with `git filter-branch` or `git filter-repo`, and
    force-push. Assume anything that reached a public GitHub is already scraped —
    rotation is what actually protects you, not the rewrite.

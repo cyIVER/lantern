@@ -147,6 +147,53 @@ docker exec stack-ui-1 ls /volumes   # must list the server UUID, not nothing
    vm\windows-setup.ps1
    ```
 
+## Minecraft UI release (pending approval)
+
+The repository contains the `minecraft-ui` service and its private
+`schematic-viewer` sidecar, but they are **not deployed yet**. Do not run this
+section until the release gate has separately approved the viewer release,
+exact image digest, secret creation and VM cutover.
+
+The viewer image must be an immutable released GHCR reference, including its
+digest. Put the approved value in `stack/.env`; never deploy `latest` or a bare
+mutable version tag:
+
+```dotenv
+SCHEMATIC_VIEWER_IMAGE=ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:<approved-digest>
+```
+
+Create the three files as described in
+[../docs/SECRETS.md](../docs/SECRETS.md#5-minecraft-ui-and-schematic-library-secrets),
+then deploy only the two new services:
+
+```bash
+cd /opt/lantern/stack
+docker compose pull schematic-viewer
+docker compose build minecraft-ui
+docker compose up -d --no-deps schematic-viewer minecraft-ui
+
+curl --fail http://127.0.0.1:8093/healthz
+curl --fail http://127.0.0.1:8093/readyz
+docker compose ps schematic-viewer minecraft-ui
+```
+
+This command does not recreate or restart Wings, the panel, the existing UI or
+the running Minecraft server. The Minecraft UI and schematic library use
+`restart: unless-stopped` and stay available independently of game power.
+
+For a viewer rollback, restore the previously approved digest in `.env`, pull
+it, and repeat the selective `up` command with `--force-recreate`. For an
+initial-release rollback, stop only the new services:
+
+```bash
+docker compose stop minecraft-ui schematic-viewer
+```
+
+Never use `docker compose down` or `down -v` for this rollback. The named
+`lantern-schematic-viewer-data` volume is deliberately retained. A selective
+rollback has no effect on Wings or Minecraft; port 8093 merely disappears until
+the UI is released again.
+
 ## Deltas from upstream
 
 Taken from `pelican/panel` `compose-full-stack.yml` and `pelican/wings`
@@ -160,10 +207,12 @@ Taken from `pelican/panel` `compose-full-stack.yml` and `pelican/wings`
 | Default subnet `172.22.0.0/16` | Upstream's `172.20.0.0/16` collided with `memory-system_default` on the old host; kept because Wings' own `pelican_nw` sits at `172.23.x` |
 | DB healthcheck + `depends_on: healthy` | Panel raced MariaDB on first boot |
 | Secrets from a gitignored `.env` | Upstream ships literal `NEEDSTOCHANGE` placeholders |
+| Always-on Minecraft UI and private viewer sidecar | Port 8093 serves the themed shell; viewer port 4173 is internal-only and its library has a named volume |
 
 ## Ports
 
-Every one of these is reachable directly from the LAN — the VM is bridged, so
+Every published port below is reachable directly from the LAN once its service
+is deployed — the VM is bridged, so
 nothing on Windows forwards, proxies or filters them. Nothing on the VM does
 either: **there is no firewall on it, deliberately.** `ufw` cannot protect
 Docker-published ports, because Docker inserts its own nftables rules ahead of
@@ -180,7 +229,7 @@ and the panel has real authentication.
 | 8090 | LANtern landing page (`/`) and CS2 control UI (`/cs2`) |
 | 8091 | Stardew HTTP API |
 | 8092 | Stardew control UI |
-| 8093 | **Reserved** for the Minecraft control UI — nothing listens there yet |
+| 8093 | Minecraft UI and `/schematics/` workspace — implementation complete, deployment pending the release gate |
 | 24642/udp | Stardew game |
 | 25565 · 25575 | Minecraft · its RCON |
 | 27015/udp + tcp | CS2 |
@@ -196,7 +245,7 @@ people actually have.
 ## Related
 
 - [../docs/USING.md](../docs/USING.md) — day-to-day operation
-- [../docs/CONTROL-UI.md](../docs/CONTROL-UI.md) — the landing page and the CS2 control UI on :8090
+- [../docs/CONTROL-UI.md](../docs/CONTROL-UI.md) — the landing, CS2 and release-gated Minecraft UIs
 - [../docs/CONNECTING.md](../docs/CONNECTING.md) — how players join
 - [../vm/README.md](../vm/README.md) — the VM under all of this, and the backups
 - [bootstrap/README.md](bootstrap/README.md) — the setup and repair scripts

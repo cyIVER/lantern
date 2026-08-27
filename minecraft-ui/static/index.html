@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>LANtern · Minecraft</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-view="overview">
+  <a class="skip-link" href="#main-content">Skip to content</a>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-group">
+        <a class="home-link" id="lantern-home" href="/" title="Back to LANtern">
+          <span aria-hidden="true">&#8592;</span>
+          <span>LANtern</span>
+        </a>
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div class="brand-copy">
+          <h1>Minecraft</h1>
+          <p>All the Mods 10 · shared build workspace</p>
+        </div>
+      </div>
+
+      <div class="session-tools" aria-label="Schematic library access">
+        <span class="session-state" id="session-state" aria-live="polite">Checking access…</span>
+        <button class="button button-secondary" id="login-open" type="button" hidden>
+          Administrator sign in
+        </button>
+        <button class="button button-secondary" id="logout-button" type="button" hidden>
+          Sign out
+        </button>
+      </div>
+    </header>
+
+    <nav class="primary-tabs" aria-label="Minecraft workspace">
+      <div class="tab-list" role="tablist" aria-orientation="horizontal">
+        <button
+          class="tab is-active"
+          id="tab-overview"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="panel-overview"
+          tabindex="0"
+          data-tab="overview"
+        >Overview</button>
+        <button
+          class="tab"
+          id="tab-schematics"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-schematics"
+          tabindex="-1"
+          data-tab="schematics"
+        >Schematics</button>
+      </div>
+      <span class="workspace-state" id="workspace-state" data-state="checking" aria-live="polite">
+        Checking schematic workspace…
+      </span>
+    </nav>
+
+    <main class="main-content" id="main-content" tabindex="-1">
+      <section
+        class="tab-panel overview-panel"
+        id="panel-overview"
+        role="tabpanel"
+        aria-labelledby="tab-overview"
+        tabindex="0"
+      >
+        <div class="overview-wrap">
+          <section class="server-card" aria-labelledby="server-heading">
+            <div class="server-summary">
+              <div>
+                <p class="eyebrow">Minecraft server</p>
+                <h2 id="server-heading">All the Mods 10</h2>
+                <p class="server-description">
+                  The game server is managed by LANtern. This workspace remains available while the game is offline.
+                </p>
+              </div>
+              <a class="button button-primary" id="manage-server" href="/">Manage on LANtern</a>
+            </div>
+
+            <div class="connect-block">
+              <div>
+                <span class="field-label">Connect address</span>
+                <code id="connect-address">localhost:25565</code>
+              </div>
+              <button class="button button-secondary" id="copy-address" type="button">Copy address</button>
+            </div>
+          </section>
+
+          <dl class="vitals" aria-label="Server configuration">
+            <div class="vital">
+              <dt>Pack</dt>
+              <dd>ATM10 8.0</dd>
+            </div>
+            <div class="vital">
+              <dt>Loader</dt>
+              <dd>NeoForge 21.1.247</dd>
+            </div>
+            <div class="vital">
+              <dt>Slots</dt>
+              <dd>8 players</dd>
+            </div>
+            <div class="vital">
+              <dt>Memory</dt>
+              <dd>10 GB heap</dd>
+            </div>
+          </dl>
+
+          <div class="overview-grid">
+            <section class="card" aria-labelledby="schematic-card-heading">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">Build planning</p>
+                  <h2 id="schematic-card-heading">Schematic workspace</h2>
+                </div>
+                <span class="status-pill" id="workspace-pill" data-state="checking">Checking</span>
+              </div>
+              <p>
+                Browse shared schematics, inspect builds in 3D, export material lists, and prepare block substitutions.
+              </p>
+              <button class="text-action" id="open-schematics" type="button">
+                Open schematic workspace <span aria-hidden="true">&#8594;</span>
+              </button>
+            </section>
+
+            <section class="card" aria-labelledby="access-heading">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">Library permissions</p>
+                  <h2 id="access-heading">Shared library access</h2>
+                </div>
+                <span class="access-mark" aria-hidden="true"></span>
+              </div>
+              <p id="access-description">
+                Shared schematics are readable without signing in. Administrator access enables library changes.
+              </p>
+              <button class="text-action" id="access-action" type="button" hidden>
+                Administrator sign in <span aria-hidden="true">&#8594;</span>
+              </button>
+            </section>
+          </div>
+
+          <aside class="notice" aria-label="Server usage note">
+            <span class="notice-icon" aria-hidden="true">i</span>
+            <p>
+              LANtern runs one game server at a time. Starting Minecraft from the LANtern home page will ask before
+              stopping another active game.
+            </p>
+          </aside>
+        </div>
+      </section>
+
+      <section
+        class="tab-panel schematics-panel"
+        id="panel-schematics"
+        role="tabpanel"
+        aria-labelledby="tab-schematics"
+        tabindex="0"
+        hidden
+      >
+        <iframe
+          id="schematic-frame"
+          src="/schematics/"
+          title="Schematic library and 3D viewer"
+          loading="eager"
+        >
+          <p>
+            Your browser cannot display the schematic workspace.
+            <a href="/schematics/">Open the schematic library and 3D viewer</a>.
+          </p>
+        </iframe>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="login-dialog" id="login-dialog" aria-labelledby="login-title" aria-describedby="login-copy">
+    <form class="login-form" id="login-form">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">Protected access</p>
+          <h2 id="login-title">Administrator sign in</h2>
+        </div>
+        <button class="icon-button" id="login-close" type="button" aria-label="Close sign-in dialog">&#215;</button>
+      </div>
+      <p id="login-copy">
+        Sign in to add, version, restore, or remove schematics from the shared library.
+      </p>
+      <label class="password-field" for="admin-password">
+        <span>Password</span>
+        <input
+          id="admin-password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+          maxlength="1024"
+        >
+      </label>
+      <p class="form-error" id="login-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button class="button button-secondary" id="login-cancel" type="button">Cancel</button>
+        <button class="button button-primary" id="login-submit" type="submit">Sign in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

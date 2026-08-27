@@ -2,6 +2,7 @@
 .env
 *.env
 !.env.example
+stack/secrets/
 
 # Stardew: mod folders and runtime output are local, not source
 stardew/mods/*
@@ -23,8 +24,10 @@ desktop.ini
 
 # Python
 .venv/
+.pytest_cache/
 __pycache__/
 *.pyc
+*.egg-info/
 
 # WeaponPaints DB credentials (generated)
 .weaponpaints-db

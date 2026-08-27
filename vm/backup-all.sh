@@ -13,6 +13,7 @@
 #   /etc/pelican        Wings' node token. Without it the panel cannot re-adopt
 #                       its own node and every server becomes uncontrollable
 #   Minecraft world     the world, and nothing else in that directory matters
+#   schematic library   user-curated schematics and their generated previews
 #   CS2 cfg + addons    CounterStrikeSharp, WeaponPaints and their configuration
 #   Stardew saves       the farm, plus the SMAPI config beside it
 #   .env files          gitignored, so they exist nowhere else
@@ -44,6 +45,22 @@ step() { printf '\n\033[36m%s\033[0m\n' "$*"; }
 
 FAILED=0
 fail() { bad "$*"; FAILED=$((FAILED + 1)); }
+
+# If the process is interrupted after the schematic sidecar is stopped, bring
+# that sidecar back. This deliberately names only schematic-viewer: the
+# Minecraft game, Wings, and the public Minecraft UI are never stopped here.
+SCHEMATIC_VIEWER_WAS_RUNNING=false
+restart_schematic_viewer() {
+  if [ "$SCHEMATIC_VIEWER_WAS_RUNNING" = true ]; then
+    if docker compose start schematic-viewer >/dev/null 2>&1; then
+      note '  schematic-viewer restarted'
+    else
+      fail '  schematic-viewer did not restart'
+    fi
+    SCHEMATIC_VIEWER_WAS_RUNNING=false
+  fi
+}
+trap restart_schematic_viewer EXIT
 
 cd "$STACK" || { bad "no stack at $STACK"; exit 1; }
 sudo mkdir -p "$OUT" && sudo chown "$(id -u):$(id -g)" "$OUT" || { bad "cannot write $OUT"; exit 1; }
@@ -112,6 +129,40 @@ else
   note '  no Minecraft server directory -- skipping'
 fi
 
+# ------------------------------------------------------- schematic library
+# The viewer is the only process that writes this volume. Stop just that
+# private sidecar for a consistent archive; the :8093 UI stays up and reports
+# the library unavailable for the few seconds this takes. Minecraft and Wings
+# are unrelated and remain untouched.
+note 'schematic library'
+SCHEMATIC_VOLUME='lantern-schematic-viewer-data'
+if docker volume inspect "$SCHEMATIC_VOLUME" >/dev/null 2>&1; then
+  SCHEMATIC_VIEWER_CONTAINER=$(docker compose ps -q schematic-viewer 2>/dev/null || true)
+  if [ -n "$SCHEMATIC_VIEWER_CONTAINER" ] \
+     && [ "$(docker inspect -f '{{.State.Running}}' "$SCHEMATIC_VIEWER_CONTAINER" 2>/dev/null)" = true ]; then
+    if docker compose stop schematic-viewer >/dev/null 2>&1; then
+      SCHEMATIC_VIEWER_WAS_RUNNING=true
+      note '  schematic-viewer stopped; Minecraft, Wings, and :8093 remain up'
+    else
+      fail '  schematic-viewer could not be stopped; refusing a live volume copy'
+    fi
+  fi
+
+  if [ "$SCHEMATIC_VIEWER_WAS_RUNNING" = true ] || [ -z "$SCHEMATIC_VIEWER_CONTAINER" ] \
+     || [ "$(docker inspect -f '{{.State.Running}}' "$SCHEMATIC_VIEWER_CONTAINER" 2>/dev/null)" != true ]; then
+    if docker run --rm -v "$SCHEMATIC_VOLUME":/v:ro alpine:3.20 \
+       tar -C /v -czf - . 2>/dev/null > "$OUT/schematic-viewer-data.tgz" \
+       && [ -s "$OUT/schematic-viewer-data.tgz" ]; then
+      ok "  schematic-viewer-data.tgz ($(du -h "$OUT/schematic-viewer-data.tgz" | cut -f1))"
+    else
+      fail '  schematic library volume'
+    fi
+  fi
+  restart_schematic_viewer
+else
+  note "  no $SCHEMATIC_VOLUME -- skipping (expected before the release gate)"
+fi
+
 # --------------------------------------------------------------------- cs2
 note 'CS2 config and plugins'
 CS2_CFG="/var/lib/pelican/volumes/${CS2_UUID}/game/csgo"
@@ -141,9 +192,13 @@ done
 # Gitignored, so these exist nowhere else. Mode 600: they hold every password
 # in the stack.
 note 'secrets and config'
-if tar -C /opt/lantern -czf "$OUT/config.tgz" \
-     stack/.env stack/.weaponpaints-db ui/.env stardew/.env \
-     stardew/settings stardew/mods 2>/dev/null; then
+CONFIG_PATHS=(stack/.env stack/.weaponpaints-db ui/.env stardew/.env stardew/settings stardew/mods)
+if [ -d /opt/lantern/stack/secrets ]; then
+  CONFIG_PATHS+=(stack/secrets)
+else
+  note '  no stack/secrets yet -- expected before the Minecraft UI release gate'
+fi
+if tar -C /opt/lantern -czf "$OUT/config.tgz" "${CONFIG_PATHS[@]}" 2>/dev/null; then
   chmod 600 "$OUT/config.tgz"
   ok '  config.tgz (mode 600)'
 else
