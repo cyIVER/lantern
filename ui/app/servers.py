@@ -28,6 +28,7 @@ breaking the rest of the page.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from typing import Any
 
@@ -49,6 +50,11 @@ GAMES: dict[str, dict[str, Any]] = {
         "label": "Minecraft (All the Mods 10)",
         "kind": "pelican",
         "panel_name": "LANtern Minecraft",
+        # A Minecraft control UI is being built and is expected here. Declaring
+        # the port before it exists is deliberate: status() reports whether
+        # anything actually answers, so the landing page can offer the link the
+        # moment it is deployed and never before.
+        "ui_port": 8093,
         "note": "11 GB",
     },
     "stardew": {
@@ -77,6 +83,26 @@ def _headers() -> dict[str, str]:
         "Content-Type": "application/json",
     }
 
+
+
+# --------------------------------------------------------------- port probe
+# Whether a game's own control UI is reachable is asked here rather than in the
+# browser. A cross-origin probe from the page cannot tell "nothing listening"
+# from "listening, but that is not an image" -- both surface as the same error
+# -- so it would report every port as up. A TCP connect knows the difference.
+UI_HOST = os.environ.get("UI_PROBE_HOST", "host.docker.internal")
+
+
+async def _port_open(port: int, host: str = UI_HOST, timeout: float = 1.5) -> bool:
+    try:
+        fut = asyncio.open_connection(host, port)
+        reader, writer = await asyncio.wait_for(fut, timeout=timeout)
+        writer.close()
+        with contextlib.suppress(Exception):
+            await writer.wait_closed()
+        return True
+    except (OSError, asyncio.TimeoutError):
+        return False
 
 # ------------------------------------------------------------------ pelican
 async def _panel_servers() -> dict[str, str]:
@@ -179,8 +205,11 @@ async def status(game: str) -> dict[str, Any]:
                     "state": "absent", "available": False,
                     "detail": f"no server named {spec['panel_name']!r} in the panel"}
         raw = await _pelican_state(uuid)
-        return {"id": game, "label": spec["label"], "note": spec["note"],
-                "state": _normalise(raw), "raw": raw, "available": True, "uuid": uuid}
+        row = {"id": game, "label": spec["label"], "note": spec["note"],
+               "state": _normalise(raw), "raw": raw, "available": True, "uuid": uuid}
+        if spec.get("ui_port"):
+            row["ui_up"] = await _port_open(spec["ui_port"])
+        return row
 
     # docker-backed
     if not await _docker_available():

@@ -36,7 +36,17 @@ async function api(path, opts = {}) {
   const text = await r.text();
   let d;
   try { d = text ? JSON.parse(text) : {}; } catch { d = { raw: text }; }
-  if (!r.ok) throw new Error(d.detail || d.raw || `HTTP ${r.status}`);
+  if (!r.ok) {
+    // FastAPI's detail may be an object -- the control service returns one
+    // describing what starting this would have to shut down. Stringifying it
+    // here is how the user ends up reading "[object Object]".
+    const det = d.detail;
+    const err = new Error((typeof det === 'string' && det) || det?.message ||
+                          d.raw || ('HTTP ' + r.status));
+    err.detail = det;
+    err.status = r.status;
+    throw err;
+  }
   return d;
 }
 
@@ -79,13 +89,13 @@ async function refresh() {
 
   if (!d.online) {
     setState('off', 'offline');
-    $('#offline-msg').innerHTML =
-      `The farm is not running.<br><span class="hint">Start it with ` +
-      `<code>./lantern use stardew</code></span>`;
+    $('#offline-msg').textContent = 'The farm is not running.';
     $('#offline').hidden = false;
     $('#body').hidden = true;
-    // Mods are readable from disk whether or not the game is up, but there is
-    // nowhere sensible to show them while the rest of the page is hidden.
+    // Mods live outside #body now: they are read from disk, and which mods are
+    // enabled is exactly what you want to see while deciding whether to start.
+    renderMods(d.mods, d.mod_problems);
+    renderOffline(d);
     return;
   }
 
@@ -111,6 +121,9 @@ async function refresh() {
   renderPlayers(d);
   renderCabins(d);
   renderMods(d.mods, d.mod_problems);
+  renderFarm(d);
+  $('#offline-stats').replaceChildren();
+  $('#offline-hint').textContent = '';
 
   $('#fps').value = String(d.rendering?.fps ?? 0);
 }
@@ -344,3 +357,165 @@ init();
 // this one, so the href cannot be a plain relative path.
 const _home = document.getElementById('homelink');
 if (_home) _home.href = 'http://' + location.hostname + ':8090/';
+
+
+/* ------------------------------------------------------------------- farm */
+const SEASONS = ['Spring', 'Summer', 'Fall', 'Winter'];
+
+function fmtDate(st) {
+  // The API reports season as an index and day/year as numbers. Rendering
+  // "2/14/3" would be technically complete and completely unreadable.
+  const season = SEASONS[st.season] ?? st.season;
+  if (season === undefined || st.dayOfMonth === undefined) return null;
+  return `${season} ${st.dayOfMonth}, Year ${st.year ?? 1}`;
+}
+
+function fmtGold(n) {
+  return typeof n === 'number' ? n.toLocaleString() + 'g' : null;
+}
+
+function renderFarm(d) {
+  const st = d.status || {};
+  const sv = d.stats || {};
+  const set = (d.settings || {}).game || {};
+  const dl = $('#farm-stats');
+  dl.replaceChildren();
+
+  const rows = [
+    ['DATE', fmtDate(st)],
+    ['TIME', st.timeOfDay !== undefined ? fmtClock(st.timeOfDay) : null],
+    ['WEATHER', st.weather ?? null],
+    ['GOLD', fmtGold(sv.gold ?? st.gold)],
+    ['FARM TYPE', set.farmType ?? null],
+    ['CABINS', (d.cabins?.cabins || []).length || null],
+    ['FARMHANDS', (d.farmhands?.farmhands || []).length || null],
+    ['CLOCK', d.rendering?.clockSpeed ? `${d.rendering.clockSpeed}x` : null],
+  ];
+  let shown = 0;
+  for (const [k, v] of rows) {
+    if (v === null || v === undefined || v === '') continue;
+    stat(dl, k, String(v));
+    shown++;
+  }
+  $('#farm-when').textContent = shown ? '' : 'the server reported nothing yet';
+
+  // Say plainly when a field is missing rather than rendering a dash and
+  // leaving the reader to wonder whether it is zero or unknown.
+  const missing = Object.keys(d.errors || {});
+  $('#farm-note').textContent = missing.length
+    ? `Not reported by the server: ${missing.join(', ')}.`
+    : '';
+}
+
+function fmtClock(t) {
+  // Stardew stores time as 600..2600 meaning 6:00am..2:00am.
+  const h24 = Math.floor(t / 100), m = t % 100;
+  const h = ((h24 + 11) % 12) + 1;
+  const ap = h24 >= 12 && h24 < 24 ? 'pm' : 'am';
+  return `${h}:${String(m).padStart(2, '0')}${ap}`;
+}
+
+/* --------------------------------------------------------------- offline */
+function renderOffline(d) {
+  const dl = $('#offline-stats');
+  dl.replaceChildren();
+  const mods = d.mods || [];
+  const on = mods.filter((m) => m.enabled).length;
+  if (mods.length) stat(dl, 'MODS', `${on} enabled of ${mods.length}`);
+  const bad = (d.mod_problems || []).length;
+  if (bad) stat(dl, 'PROBLEMS', `${bad} with missing dependencies`);
+
+  $('#offline-hint').textContent = serverBusy
+    ? 'Working…'
+    : 'Use Start farm above. It takes a minute or two to reach the invite code.';
+}
+
+/* --------------------------------------------------------- game servers */
+let serverBusy = false;
+
+function confirmDialog(message, okLabel = 'Go ahead') {
+  return new Promise((resolve) => {
+    const back = $('#confirm-backdrop');
+    $('#confirm-body').textContent = message;
+    $('#confirm-ok').textContent = okLabel;
+    back.hidden = false;
+    const done = (a) => {
+      back.hidden = true;
+      $('#confirm-ok').removeEventListener('click', yes);
+      $('#confirm-cancel').removeEventListener('click', no);
+      document.removeEventListener('keydown', key);
+      resolve(a);
+    };
+    const yes = () => done(true);
+    const no = () => done(false);
+    const key = (e) => { if (e.key === 'Escape') done(false); };
+    $('#confirm-ok').addEventListener('click', yes);
+    $('#confirm-cancel').addEventListener('click', no);
+    document.addEventListener('keydown', key);
+    $('#confirm-cancel').focus();
+  });
+}
+
+async function pollServers() {
+  let d;
+  try {
+    d = await api('/api/servers');
+  } catch {
+    return;
+  }
+  const me = (d.servers || []).find((x) => x.id === 'stardew');
+  const up = me && (me.state === 'running' || me.state === 'starting');
+
+  // Only one of the two is ever shown: a Start button next to a Stop button
+  // invites the question of which one is currently true.
+  $('#btn-start').hidden = !me || up;
+  $('#btn-stop').hidden = !me || !up;
+  $('#btn-start').disabled = serverBusy;
+  $('#btn-stop').disabled = serverBusy;
+}
+
+async function startFarm() {
+  serverBusy = true; await pollServers();
+  try {
+    try {
+      await api('/api/servers/stardew/start', { body: { confirm: false } });
+    } catch (e) {
+      // A 409 carrying needs_confirm is the control service asking permission,
+      // not failing: it means starting this would shut another game down.
+      if (e.status === 409 && e.detail && e.detail.needs_confirm) {
+        serverBusy = false; await pollServers();
+        if (!await confirmDialog(e.detail.message, 'Stop it and start')) return;
+        serverBusy = true; await pollServers();
+        await api('/api/servers/stardew/start', { body: { confirm: true } });
+      } else throw e;
+    }
+    toast('Starting the farm. Give it a minute or two.');
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    serverBusy = false;
+    await pollServers();
+    refresh();
+  }
+}
+
+async function stopFarm() {
+  if (!await confirmDialog(
+        'Stop the farm? Anyone playing will be disconnected.', 'Stop it')) return;
+  serverBusy = true; await pollServers();
+  try {
+    await api('/api/servers/stardew/stop', { method: 'POST' });
+    toast('Stopping the farm.');
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    serverBusy = false;
+    await pollServers();
+    refresh();
+  }
+}
+
+document.getElementById('btn-start').addEventListener('click', startFarm);
+document.getElementById('btn-stop').addEventListener('click', stopFarm);
+pollServers();
+setInterval(() => { if (!serverBusy) pollServers(); }, 6000);

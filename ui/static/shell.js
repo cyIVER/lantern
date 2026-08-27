@@ -21,10 +21,13 @@ const UIS = {
     href: () => '/cs2',
     blurb: 'Maps, game modes, bots, match control and loadouts.',
   },
-  // The Minecraft control UI is in progress. When it lands, give it a `ui`
-  // label and an href -- nothing else here needs to change.
+  // The Minecraft control UI is being built separately, on 8093. The link is
+  // only shown once the server has confirmed something answers there, so this
+  // can sit here before it is deployed without offering a dead button.
   minecraft: {
-    blurb: 'Console, files and mods are in the Pelican panel for now.',
+    ui: 'Minecraft control',
+    href: () => `http://${location.hostname}:8093/`,
+    blurb: 'Console, files and mods are in the Pelican panel until its UI lands.',
   },
   stardew: {
     ui: 'Stardew control',

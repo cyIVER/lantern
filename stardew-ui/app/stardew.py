@@ -136,6 +136,7 @@ async def overview() -> dict[str, Any]:
     out: dict[str, Any] = {"configured": True, "errors": {}}
     for name, fn in (("health", health), ("status", status),
                      ("players", players), ("cabins", cabins),
+                     ("farmhands", farmhands), ("stats", stats),
                      ("settings", settings), ("rendering", get_rendering)):
         try:
             out[name] = await fn()

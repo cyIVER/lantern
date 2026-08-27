@@ -30,7 +30,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import mods, stardew
+from . import lantern, mods, stardew
 
 STATIC = pathlib.Path(__file__).parent.parent / "static"
 SERVER_CONTAINER = os.environ.get("SDV_CONTAINER", "sdvd-server")
@@ -161,6 +161,42 @@ async def restart_server() -> dict[str, Any]:
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     return {"ok": True, "api": stardew.BASE or None, "mods_dir": str(mods.MODS_DIR)}
+
+
+# ------------------------------------------------------------- game servers
+# Proxied to the LANtern control service rather than done here. Only one game
+# server may run at a time, and a safety rule implemented twice is a safety
+# rule that will eventually disagree with itself. See app/lantern.py.
+class ConfirmBody(BaseModel):
+    confirm: bool = False
+
+
+@app.get("/api/servers")
+async def servers() -> dict[str, Any]:
+    """State of every game server. Never raises -- this panel appearing is not
+    worth breaking the rest of the page for."""
+    try:
+        return await lantern.servers()
+    except lantern.LanternError as exc:
+        return {"available": False, "detail": str(exc), "servers": [], "running": []}
+
+
+@app.post("/api/servers/{game}/start")
+async def server_start(game: str, body: ConfirmBody) -> dict[str, Any]:
+    try:
+        return await lantern.start(game, confirm=body.confirm)
+    except lantern.LanternError as exc:
+        # Pass the 409 body through untouched: it names what would be stopped,
+        # and this UI shows the same confirmation the landing page does.
+        raise HTTPException(exc.status, exc.detail or str(exc)) from exc
+
+
+@app.post("/api/servers/{game}/stop")
+async def server_stop(game: str) -> dict[str, Any]:
+    try:
+        return await lantern.stop(game)
+    except lantern.LanternError as exc:
+        raise HTTPException(exc.status, exc.detail or str(exc)) from exc
 
 
 @app.get("/")

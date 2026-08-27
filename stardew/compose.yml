@@ -138,6 +138,12 @@ services:
       STARDEW_API_KEY: "${API_KEY:-}"
       SDV_CONTAINER: "sdvd-server"
       MODS_DIR: "/mods"
+      # The LANtern control service owns the one-server-at-a-time rule, so the
+      # power buttons here forward to it rather than reimplementing it. It is a
+      # different compose project, so it cannot be reached by service name --
+      # host.docker.internal below resolves to the VM, where its port is
+      # published.
+      LANTERN_UI_URL: "http://host.docker.internal:8090"
     volumes:
       # Read-write: enabling and disabling a mod is a folder rename.
       - ./mods:/mods
@@ -150,8 +156,12 @@ services:
       # acceptable here because the port is LAN-only on a machine you own; do
       # not forward it. See docs/STARDEW.md.
       - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      - server
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Deliberately NOT depends_on: server. This is the UI you use to START the
+    # game -- one that only comes up once the game is already running is a UI
+    # you cannot use for the thing you most need it for. It handles the server
+    # being absent.
     mem_limit: 256m
     restart: unless-stopped
 

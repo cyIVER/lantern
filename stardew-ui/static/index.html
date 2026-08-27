@@ -16,6 +16,8 @@
     <h1>LANtern <span class="sep">·</span> Stardew Valley</h1>
     <div class="head-right">
       <span id="pill-state" class="pill pill-wait">checking…</span>
+      <button class="btn btn-go"   id="btn-start"   hidden>Start farm</button>
+      <button class="btn btn-stop" id="btn-stop"    hidden>Stop farm</button>
       <button class="btn btn-quiet" id="btn-refresh">Refresh</button>
       <a class="homelink" id="homelink" href="#" title="Back to LANtern">&#8592; LANtern</a>
     </div>
@@ -27,7 +29,35 @@
   <!-- ------------------------------------------------------------- offline -->
   <section id="offline" class="card notice">
     <p id="offline-msg">Looking for the farm…</p>
+    <dl class="stats" id="offline-stats"></dl>
+    <p class="hint" id="offline-hint"></p>
   </section>
+
+  <!-- ------------------------------------------------------------ mods -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Mods</h2>
+        <span class="hint" id="mods-count"></span>
+      </div>
+
+      <div id="mods-warn" class="warn" hidden></div>
+
+      <p class="hint">
+        Disabling renames the folder with a leading dot, which is how SMAPI skips it.
+        <strong>Changes apply on the next server restart</strong> — SMAPI only reads the
+        mods folder once, at startup.
+      </p>
+
+      <div id="mods-empty" class="muted">
+        Nothing in <code>stardew/mods/</code> yet. Drop mod folders in there and refresh.
+      </div>
+      <div id="mods" class="mods"></div>
+
+      <div id="restart-bar" class="restart-bar" hidden>
+        <span>Mod changes are staged. The farm is still running the old set.</span>
+        <button class="btn btn-warn" id="btn-restart">Restart the server</button>
+      </div>
+    </section>
 
   <div id="body" hidden>
 
@@ -54,32 +84,6 @@
         <tbody></tbody>
       </table>
       <p class="hint" id="cabins"></p>
-    </section>
-
-    <!-- ------------------------------------------------------------ mods -->
-    <section class="card">
-      <div class="card-head">
-        <h2>Mods</h2>
-        <span class="hint" id="mods-count"></span>
-      </div>
-
-      <div id="mods-warn" class="warn" hidden></div>
-
-      <p class="hint">
-        Disabling renames the folder with a leading dot, which is how SMAPI skips it.
-        <strong>Changes apply on the next server restart</strong> — SMAPI only reads the
-        mods folder once, at startup.
-      </p>
-
-      <div id="mods-empty" class="muted">
-        Nothing in <code>stardew/mods/</code> yet. Drop mod folders in there and refresh.
-      </div>
-      <div id="mods" class="mods"></div>
-
-      <div id="restart-bar" class="restart-bar" hidden>
-        <span>Mod changes are staged. The farm is still running the old set.</span>
-        <button class="btn btn-warn" id="btn-restart">Restart the server</button>
-      </div>
     </section>
 
     <!-- -------------------------------------------------------- controls -->
@@ -110,6 +114,13 @@
       </div>
     </section>
 
+    <!-- ------------------------------------------------------------- farm -->
+    <section class="card">
+      <div class="card-head"><h2>The farm</h2><span class="hint" id="farm-when"></span></div>
+      <dl class="stats" id="farm-stats"></dl>
+      <p class="hint" id="farm-note"></p>
+    </section>
+
     <!-- ------------------------------------------------------------- view -->
     <section class="card">
       <div class="card-head"><h2>Live view</h2><span class="hint">only renders above 0 fps</span></div>
@@ -123,6 +134,19 @@
 </main>
 
 <div id="toast" class="toast"></div>
+
+<!-- Starting the farm can shut down another game. Say which one, and what
+     happens to whoever is on it, before doing it. -->
+<div id="confirm-backdrop" class="backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h3 id="confirm-title">Are you sure?</h3>
+    <p id="confirm-body"></p>
+    <div class="modal-actions">
+      <button class="btn" id="confirm-cancel">Cancel</button>
+      <button class="btn btn-stop" id="confirm-ok">Go ahead</button>
+    </div>
+  </div>
+</div>
 <script src="/static/app.js"></script>
 </body>
 </html>
