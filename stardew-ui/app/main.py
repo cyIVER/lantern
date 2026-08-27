@@ -43,6 +43,29 @@ def _err(exc: Exception, code: int = 503) -> HTTPException:
 
 
 # --------------------------------------------------------------- game state
+# ------------------------------------------------------------------ caching
+# These pages are redeployed constantly and served over a LAN, so the browser
+# caching a stylesheet for a day costs far more than revalidating it costs.
+# Twice during development a fix was deployed, verified as served correctly by
+# the server, and still absent in the browser -- which sends you looking for a
+# bug in the deploy that is not there.
+#
+# `no-cache` does not mean "do not cache": it means revalidate before use. The
+# ETag still works, so an unchanged file is a 304 with no body. On a LAN that
+# is free, and a deploy is visible on the next reload rather than the next time
+# the browser feels like asking.
+class FreshStatic(StaticFiles):
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+def _fresh(response: FileResponse) -> FileResponse:
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/api/overview")
 async def overview() -> dict[str, Any]:
     """Everything the dashboard needs in one call. Never raises: a farm still
@@ -201,7 +224,7 @@ async def server_stop(game: str) -> dict[str, Any]:
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(STATIC / "index.html")
+    return _fresh(FileResponse(STATIC / "index.html"))
 
 
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+app.mount("/static", FreshStatic(directory=STATIC), name="static")
