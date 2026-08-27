@@ -164,7 +164,7 @@ function renderSession(session) {
   if (!enabled) {
     elements.sessionState.textContent = "Read-only library";
     elements.accessDescription.textContent =
-      "Shared schematics are readable. Administrator changes are not configured on this server.";
+      "Shared schematics are readable. Administrator changes are unavailable on this connection.";
   } else if (authenticated) {
     elements.sessionState.textContent = "Administrator";
     elements.accessDescription.textContent =
