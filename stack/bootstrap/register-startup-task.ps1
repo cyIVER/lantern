@@ -11,7 +11,7 @@
 [CmdletBinding()]
 param(
     [string]$TaskName = 'LANtern startup',
-    [string]$Script   = 'C:\Users\iveri\Documents\code\lantern\stack\bootstrap\lantern-startup.ps1',
+    [string]$Script   = (Join-Path $PSScriptRoot 'lantern-startup.ps1'),
     [int]$DelaySeconds = 45
 )
 

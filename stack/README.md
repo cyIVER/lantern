@@ -147,62 +147,101 @@ docker exec stack-ui-1 ls /volumes   # must list the server UUID, not nothing
    vm\windows-setup.ps1
    ```
 
-## Minecraft UI release (pending approval)
+## Minecraft admin-portal release (pending approval)
 
-The repository contains the `minecraft-ui` service and its private
-`schematic-viewer` sidecar, but they are **not deployed yet**. Do not run this
-section until the release gate has separately approved the viewer release,
-exact image digest, secret creation and VM cutover.
+The Minecraft home and private `schematic-viewer` sidecar are already deployed
+on port `8093` from `main`. The named-admin portal is implemented on
+`feature/minecraft-admin-portal`; it is not operational until that branch is
+reviewed, merged and selectively deployed with its new secrets and persistent
+portal volume.
 
-The viewer image is hard-pinned in `compose.yml` to the independently verified
-v1.0.1 release index:
+Do not start the portal cutover until a fresh `backup-pull.ps1` run has completed
+successfully and its copied set contains a verified `SHA256SUMS`. That
+backup-before-deploy check is a release acceptance condition, not an optional
+precaution. Also record the pre-deploy image/container state for rollback.
+
+The currently deployed viewer remains hard-pinned in `compose.yml` to the
+independently verified v1.0.1 release index:
 
 ```text
 ghcr.io/scotsgamez/create-schematic-viewer:v1.0.1@sha256:d5501af9de95f9b89484ae4e4dbea098b0cdd3e86af3b19e50976855b533444c
 ```
 
 Changing the viewer is a reviewed source change; `latest`, a bare mutable tag,
-or a runtime `.env` override cannot select a different image. Configure the
-LAN-only bind, secret-reader group, and secure-cookie policy in `stack/.env`:
+or a runtime `.env` override cannot select a different image. The pinned v1.0.1
+release includes the Asset Admin overlay fix. No viewer-repository change or
+Scotland approval is required for this portal-only phase; any future viewer
+change still requires its own release and independently verified digest.
+
+Configure the LAN-only bind, secret-reader group and explicitly accepted
+trusted-LAN HTTP policy in `stack/.env`:
 
 ```dotenv
 LANTERN_MINECRAFT_UI_BIND_IP=192.168.0.115
 LANTERN_SECRET_GID=1000 # replace with the output of `id -g` on the VM
-MINECRAFT_SECURE_COOKIE=false # keep false until an HTTPS proxy is in place
+MINECRAFT_ALLOW_INSECURE_ADMIN=true
+MINECRAFT_SECURE_COOKIE=false
 ```
 
-Create the three files as described in
+Compose also pins exact trusted browser origins for the LAN IP, `lantern`
+hostname and loopback, and accepts Pelican upload targets only from the exact
+`http://192.168.0.115:8080` origin at `/upload/file`. Queue defaults in
+`.env.example` are 500 pending submissions, 2 GiB total pending payloads, 20
+uploads per source IP per hour, and 30-day payload retention. Expiration removes
+payload bytes from storage and quota but retains durable metadata and events.
+
+Create the four files as described in
 [../docs/SECRETS.md](../docs/SECRETS.md#5-minecraft-ui-and-schematic-library-secrets),
-then deploy only the two new services:
+including named `iveri` and `scotlandf` portal accounts and the server-side
+Pelican service token. LANtern records each portal actor in its immutable local
+audit log; upstream Pelican may show the shared service identity rather than the
+named person.
+
+The first portal deployment also attaches the existing `panel` and `ui`
+containers to the internal `minecraft-admin-backplane`. Recreate only these
+application services and the two Minecraft UI services; do not recreate Wings,
+the database, cache or the game container:
 
 ```bash
 cd /opt/lantern/stack
 docker compose pull schematic-viewer
 docker compose build minecraft-ui
-docker compose up -d --no-deps schematic-viewer minecraft-ui
+docker compose up -d --no-deps panel ui schematic-viewer minecraft-ui
 
 curl --fail http://192.168.0.115:8093/healthz
 curl --fail http://192.168.0.115:8093/readyz
-docker compose ps schematic-viewer minecraft-ui
+docker compose ps panel ui schematic-viewer minecraft-ui
 ```
 
-This command does not recreate or restart Wings, the panel, the existing UI or
-the running Minecraft server. The Minecraft UI and schematic library use
+This causes a short panel, landing-page and Minecraft-UI interruption while
+their private network membership is applied. It does not recreate or restart
+Wings or the running Minecraft game. The Minecraft UI and schematic library use
 `restart: unless-stopped` and stay available independently of game power.
+
+After deployment, verify anonymous start/stop/restart and schematic submission,
+then sign in separately as `iveri` and `scotlandf` and verify the review queue,
+allowlisted file editing, staged mod operations, backup creation, confirmed
+restore flow and named audit records. Confirm logout revokes the captured session,
+cross-origin requests are rejected, and repeated destructive requests cannot
+execute twice. A restore must stop Minecraft, prove it offline before both the
+safety backup and replacement, and leave it stopped. Perform destructive
+validation only with an approved disposable target or restore point.
 
 For a viewer rollback, make a reviewed source change that restores the previous
 approved digest in `compose.yml`, pull it, and repeat the selective `up` command
-with `--force-recreate`. For an initial-release rollback, stop only the new
-services:
+with `--force-recreate`. For a portal rollback, restore the preceding reviewed
+commit and selectively recreate the affected application services. Do not delete
+either persistent data volume. If the UI itself must be withdrawn, stop only:
 
 ```bash
 docker compose stop minecraft-ui schematic-viewer
 ```
 
 Never use `docker compose down` or `down -v` for this rollback. The named
-`lantern-schematic-viewer-data` volume is deliberately retained. A selective
-rollback has no effect on Wings or Minecraft; port 8093 merely disappears until
-the UI is released again.
+`lantern-schematic-viewer-data` and `lantern-minecraft-ui-data` volumes are
+deliberately retained: the former holds the library and the latter holds the
+review queue and audit log. A selective rollback has no effect on Wings or the
+running Minecraft game.
 
 To restore a backed-up schematic library, use the guarded restore script. It
 requires the archive and SHA-256 companion under the approved backup root,
@@ -250,7 +289,7 @@ and the panel has real authentication.
 | 8090 | LANtern landing page (`/`) and CS2 control UI (`/cs2`) |
 | 8091 | Stardew HTTP API |
 | 8092 | Stardew control UI |
-| 8093 | Minecraft UI and `/schematics/` workspace — implementation complete, deployment pending the release gate |
+| 8093 | Deployed Minecraft home and `/schematics/` workspace; named-admin portal pending release |
 | 24642/udp | Stardew game |
 | 25565 · 25575 | Minecraft · its RCON |
 | 27015/udp + tcp | CS2 |
@@ -266,7 +305,7 @@ people actually have.
 ## Related
 
 - [../docs/USING.md](../docs/USING.md) — day-to-day operation
-- [../docs/CONTROL-UI.md](../docs/CONTROL-UI.md) — the landing, CS2 and release-gated Minecraft UIs
+- [../docs/CONTROL-UI.md](../docs/CONTROL-UI.md) — the landing, CS2 and Minecraft UIs
 - [../docs/CONNECTING.md](../docs/CONNECTING.md) — how players join
 - [../vm/README.md](../vm/README.md) — the VM under all of this, and the backups
 - [bootstrap/README.md](bootstrap/README.md) — the setup and repair scripts

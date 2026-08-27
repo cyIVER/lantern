@@ -215,9 +215,7 @@ def test_secure_cookie_configuration_enables_admin_without_insecure_override(
     tmp_path: Path,
 ) -> None:
     viewer = RecordingViewer(protect_library_mutations=True)
-    settings = replace(
-        _admin_settings(tmp_path, allow_insecure_admin=False), secure_cookie=True
-    )
+    settings = replace(_admin_settings(tmp_path, allow_insecure_admin=False), secure_cookie=True)
     with TestClient(
         create_app(viewer=viewer, settings=settings), base_url="https://testserver"
     ) as client:
@@ -442,9 +440,7 @@ def test_admin_login_stream_limit_does_not_depend_on_content_length(
                 settings=_admin_settings(tmp_path, allow_insecure_admin=True),
             )
         )
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             return await client.post(
                 "/api/session/login",
                 headers={"Origin": "http://testserver"},

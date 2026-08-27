@@ -19,9 +19,7 @@ class ComposeLoader(yaml.SafeLoader):
     """Safe YAML loader that understands Compose sequence replacement tags."""
 
 
-ComposeLoader.add_constructor(
-    "!override", lambda loader, node: loader.construct_sequence(node)
-)
+ComposeLoader.add_constructor("!override", lambda loader, node: loader.construct_sequence(node))
 
 
 def _action_references(value: Any) -> Iterator[str]:
@@ -42,29 +40,43 @@ def test_compose_publishes_only_minecraft_ui_and_keeps_viewer_private() -> None:
     minecraft_ui = compose["services"]["minecraft-ui"]
     viewer = compose["services"]["schematic-viewer"]
 
-    assert minecraft_ui["ports"] == [
-        "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8093:8093"
-    ]
+    assert minecraft_ui["ports"] == ["${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8093:8093"]
     assert minecraft_ui.get("depends_on") is None
     assert viewer.get("ports") is None
     assert viewer["expose"] == ["4173"]
     assert viewer.get("depends_on") is None
-    assert set(minecraft_ui["networks"]) == {"minecraft-edge", "schematic-backplane"}
+    assert set(minecraft_ui["networks"]) == {
+        "minecraft-edge",
+        "schematic-backplane",
+        "minecraft-admin-backplane",
+    }
     assert "default" not in minecraft_ui["networks"]
     assert compose["networks"]["schematic-backplane"]["internal"] is True
-    assert compose["volumes"]["schematic-viewer-data"]["name"] == (
-        "lantern-schematic-viewer-data"
-    )
+    assert compose["networks"]["minecraft-admin-backplane"]["internal"] is True
+    assert "minecraft-admin-backplane" in compose["services"]["ui"]["networks"]
+    assert "minecraft-admin-backplane" in compose["services"]["panel"]["networks"]
+    assert compose["volumes"]["schematic-viewer-data"]["name"] == ("lantern-schematic-viewer-data")
     assert viewer["image"] == VIEWER_IMAGE
+    assert minecraft_ui["volumes"] == ["minecraft-ui-data:/data"]
+    assert compose["volumes"]["minecraft-ui-data"]["name"] == ("lantern-minecraft-ui-data")
+    assert minecraft_ui["environment"]["MINECRAFT_TRUSTED_BROWSER_ORIGINS"] == (
+        "http://${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8093,"
+        "http://lantern:8093,http://127.0.0.1:8093"
+    )
+    assert minecraft_ui["environment"]["PELICAN_UPLOAD_ORIGINS"] == (
+        "http://${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8080"
+    )
+    assert minecraft_ui["environment"]["PELICAN_URL"] == "http://panel"
+    assert minecraft_ui["environment"]["PELICAN_VIRTUAL_HOST"] == (
+        "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}"
+    )
 
 
 def test_landing_probe_uses_the_minecraft_ui_lan_bind_address() -> None:
     compose = yaml.safe_load((ROOT / "stack" / "compose.yml").read_text(encoding="utf-8"))
     bind_address = "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}"
 
-    assert compose["services"]["minecraft-ui"]["ports"] == [
-        f"{bind_address}:8093:8093"
-    ]
+    assert compose["services"]["minecraft-ui"]["ports"] == [f"{bind_address}:8093:8093"]
     assert compose["services"]["ui"]["environment"]["UI_PROBE_HOST"] == bind_address
 
 
@@ -80,9 +92,10 @@ def test_compose_hardens_both_new_services_and_mounts_file_secrets() -> None:
         assert service["group_add"] == ["${LANTERN_SECRET_GID:-1000}"]
 
     assert set(compose["secrets"]) >= {
-        "minecraft_admin_password_hash",
+        "minecraft_admin_users",
         "minecraft_session_secret",
         "schematic_viewer_admin_token",
+        "pelican_client_api_key",
     }
 
 
@@ -95,24 +108,24 @@ def test_compose_admin_transport_configuration_is_fail_closed() -> None:
     env_example = (ROOT / "stack" / ".env.example").read_text(encoding="utf-8")
 
     assert (
-        compose["services"]["minecraft-ui"]["environment"][
-            "MINECRAFT_ALLOW_INSECURE_ADMIN"
-        ]
-        == "false"
+        compose["services"]["minecraft-ui"]["environment"]["MINECRAFT_ALLOW_INSECURE_ADMIN"]
+        == "${MINECRAFT_ALLOW_INSECURE_ADMIN:-true}"
     )
     assert (
-        ci_override["services"]["minecraft-ui"]["environment"][
-            "MINECRAFT_ALLOW_INSECURE_ADMIN"
-        ]
+        ci_override["services"]["minecraft-ui"]["environment"]["MINECRAFT_ALLOW_INSECURE_ADMIN"]
         == "true"
     )
-    assert compose["services"]["minecraft-ui"]["environment"][
-        "MINECRAFT_SECURE_COOKIE"
-    ] == "${MINECRAFT_SECURE_COOKIE:-false}"
+    assert (
+        compose["services"]["minecraft-ui"]["environment"]["MINECRAFT_SECURE_COOKIE"]
+        == "${MINECRAFT_SECURE_COOKIE:-false}"
+    )
     assert "MINECRAFT_SECURE_COOKIE=false" in env_example.splitlines()
-    assert ci_override["services"]["minecraft-ui"]["ports"] == [
-        "127.0.0.1:8093:8093"
-    ]
+    assert "MINECRAFT_ALLOW_INSECURE_ADMIN=true" in env_example.splitlines()
+    assert ci_override["services"]["minecraft-ui"]["ports"] == ["127.0.0.1:8093:8093"]
+    assert (
+        ci_override["services"]["minecraft-ui"]["environment"]["MINECRAFT_TRUSTED_BROWSER_ORIGINS"]
+        == "http://127.0.0.1:8093"
+    )
 
 
 def test_ci_runs_minecraft_and_vm_recovery_tests() -> None:
@@ -143,9 +156,7 @@ def test_ci_pulls_the_released_viewer_without_repository_credentials() -> None:
     assert "repository: ScotsGamez/create-schematic-viewer" not in serialized_workflow
     assert not any(step.get("name") == "check out the reviewed viewer contract" for step in steps)
 
-    build_step = next(
-        step for step in steps if step.get("name") == "build the Minecraft UI image"
-    )
+    build_step = next(step for step in steps if step.get("name") == "build the Minecraft UI image")
     assert "schematic-viewer" not in build_step["run"]
 
     start_step = next(
@@ -164,7 +175,9 @@ def test_ci_pulls_the_released_viewer_without_repository_credentials() -> None:
 
     compose_job = workflow["jobs"]["compose"]
     render_step = next(
-        step for step in compose_job["steps"] if step.get("name") == "validate rendered Compose model"
+        step
+        for step in compose_job["steps"]
+        if step.get("name") == "validate rendered Compose model"
     )
     assert "--file stack/compose.ci.yml" in render_step["run"]
     assert '$ports[0].host_ip == "127.0.0.1"' in render_step["run"]
@@ -173,8 +186,8 @@ def test_ci_pulls_the_released_viewer_without_repository_credentials() -> None:
     secret_step = next(
         step for step in steps if step.get("name") == "create disposable file secrets"
     )
-    assert 'chmod 640 stack/secrets/*' in secret_step["run"]
-    assert 'LANTERN_SECRET_GID=$secret_gid' in secret_step["run"]
+    assert "chmod 640 stack/secrets/*" in secret_step["run"]
+    assert "LANTERN_SECRET_GID=$secret_gid" in secret_step["run"]
 
 
 def test_all_workflow_actions_use_the_approved_commit_pins() -> None:

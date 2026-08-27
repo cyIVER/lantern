@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -72,6 +73,8 @@ def _run_backup(
     keep: int = 7,
     fixed_stamp: str | None = None,
     root_owned_destination: bool = False,
+    portal_present: bool = False,
+    portal_failure: str = "",
 ) -> tuple[subprocess.CompletedProcess[str], list[str], dict[str, object]]:
     stack = tmp_path / "stack"
     bootstrap = stack / "bootstrap"
@@ -90,6 +93,11 @@ def _run_backup(
         raise ValueError(f"unsupported helper state: {helper_state}")
 
     operations = state / "operations.log"
+    portal_source = state / "portal-source.sqlite3"
+    with sqlite3.connect(portal_source) as connection:
+        connection.execute("CREATE TABLE submissions (id INTEGER PRIMARY KEY)")
+        connection.execute("INSERT INTO submissions DEFAULT VALUES")
+    portal_container_snapshot = state / "portal-container-snapshot.sqlite3"
     encoded_password = "dGVzdC1yY29uLXBhc3N3b3JkLW11c3Qtbm90LWxlYWs="
 
     _write_executable(
@@ -137,6 +145,37 @@ case "$joined" in
         ;;
     esac
     printf '%s\n' "${{FAKE_MC_RUNNING:-false}}"
+    exit 0
+    ;;
+  *" volume inspect lantern-minecraft-ui-data "*)
+    [ "${{FAKE_PORTAL_PRESENT:-false}}" = true ]
+    exit
+    ;;
+  *" compose ps -q minecraft-ui "*)
+    [ "${{FAKE_PORTAL_FAILURE:-}}" != container_lookup ] || exit 1
+    printf 'minecraft-ui-container\n'
+    exit 0
+    ;;
+  *" inspect -f "*" minecraft-ui-container "*)
+    [ "${{FAKE_PORTAL_FAILURE:-}}" != container_stopped ] || {{ printf 'false\n'; exit 0; }}
+    printf 'true\n'
+    exit 0
+    ;;
+  *" exec minecraft-ui-container python - "*)
+    printf 'portal-snapshot\n' >> "$FAKE_OPERATION_LOG"
+    [ "${{FAKE_PORTAL_FAILURE:-}}" != snapshot ] || exit 1
+    cp "$FAKE_PORTAL_SOURCE" "$FAKE_PORTAL_CONTAINER_SNAPSHOT"
+    exit 0
+    ;;
+  *" cp minecraft-ui-container:"*)
+    printf 'portal-copy\n' >> "$FAKE_OPERATION_LOG"
+    [ "${{FAKE_PORTAL_FAILURE:-}}" != copy ] || exit 1
+    cp "$FAKE_PORTAL_CONTAINER_SNAPSHOT" "${{@: -1}}"
+    exit 0
+    ;;
+  *" exec minecraft-ui-container rm -f -- "*)
+    printf 'portal-cleanup\n' >> "$FAKE_OPERATION_LOG"
+    rm -f -- "$FAKE_PORTAL_CONTAINER_SNAPSHOT"
     exit 0
     ;;
   *" volume inspect "*) exit 1 ;;
@@ -309,6 +348,10 @@ esac
         "FAKE_MC_PRESENT": str(minecraft_present).lower(),
         "FAKE_FAIL_STAGE": fail_stage,
         "FAKE_ROOT_OWNED_DESTINATION": str(root_owned_destination).lower(),
+        "FAKE_PORTAL_PRESENT": str(portal_present).lower(),
+        "FAKE_PORTAL_FAILURE": portal_failure,
+        "FAKE_PORTAL_SOURCE": _bash_path(portal_source),
+        "FAKE_PORTAL_CONTAINER_SNAPSHOT": _bash_path(portal_container_snapshot),
         "FAKE_BACKUP_DESTINATION": _bash_path(destination),
         "FAKE_EXPECTED_RCON_PASSWORD": SENTINEL_PASSWORD,
         "REAL_PYTHON": _bash_path(Path(sys.executable)),
@@ -526,6 +569,66 @@ def test_success_publishes_verified_checksum_manifest_for_every_payload(
     for basename, digest in records.items():
         payload = backup_dir / basename
         assert hashlib.sha256(payload.read_bytes()).hexdigest() == digest
+
+
+def test_deployed_portal_database_is_snapshotted_and_in_checksum_inventory(
+    tmp_path: Path,
+) -> None:
+    result, operations, status = _run_backup(tmp_path, portal_present=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert status["status"] == "complete"
+    assert operations.count("portal-snapshot") == 1
+    assert operations.count("portal-copy") == 1
+    assert operations.count("portal-cleanup") == 1
+    backup_dir = max((tmp_path / "backups").iterdir())
+    snapshot = backup_dir / "minecraft-portal.sqlite3"
+    assert snapshot.stat().st_size > 0
+    with sqlite3.connect(f"file:{snapshot.as_posix()}?mode=ro", uri=True) as connection:
+        assert connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        assert connection.execute("SELECT COUNT(*) FROM submissions").fetchone() == (1,)
+    inventory = (backup_dir / "SHA256SUMS").read_text(encoding="ascii")
+    assert re.search(r"^[0-9a-f]{64}  minecraft-portal\.sqlite3$", inventory, re.MULTILINE)
+    assert not (tmp_path / "state" / "portal-container-snapshot.sqlite3").exists()
+
+
+@pytest.mark.parametrize("failure", ["snapshot", "copy"])
+def test_deployed_portal_snapshot_failure_is_typed_and_cleans_container_tmpfs(
+    tmp_path: Path, failure: str
+) -> None:
+    result, operations, status = _run_backup(
+        tmp_path,
+        portal_present=True,
+        portal_failure=failure,
+    )
+
+    assert result.returncode != 0
+    assert status["status"] == "incomplete"
+    assert "minecraft.portal_snapshot_failed" in status["failure_codes"]
+    assert operations.count("portal-snapshot") == 1
+    assert operations.count("portal-cleanup") == 1
+    assert not list(tmp_path.glob("backups/*/minecraft-portal.sqlite3"))
+    assert not list(tmp_path.glob("backups/*/.minecraft-portal-backup.*"))
+    assert not (tmp_path / "state" / "portal-container-snapshot.sqlite3").exists()
+
+
+@pytest.mark.parametrize("failure", ["container_lookup", "container_stopped"])
+def test_deployed_portal_requires_a_running_ui_container(
+    tmp_path: Path, failure: str
+) -> None:
+    result, operations, status = _run_backup(
+        tmp_path,
+        portal_present=True,
+        portal_failure=failure,
+    )
+
+    assert result.returncode != 0
+    assert status["status"] == "incomplete"
+    assert status["failure_codes"].count("minecraft.portal_snapshot_failed") == 1
+    assert "minecraft.portal_snapshot_cleanup_failed" not in status["failure_codes"]
+    assert "portal-snapshot" not in operations
+    assert "portal-cleanup" not in operations
+    assert not list(tmp_path.glob("backups/*/minecraft-portal.sqlite3"))
 
 
 def test_root_owned_destination_allows_atomic_checksum_and_set_publication(

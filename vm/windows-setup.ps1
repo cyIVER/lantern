@@ -29,7 +29,7 @@
 [CmdletBinding()]
 param(
     [string]$VmName = 'lantern',
-    [string]$RepoDir = 'C:\Users\iveri\Documents\code\lantern',
+    [string]$RepoDir = (Split-Path -Parent $PSScriptRoot),
     [switch]$DisableHypervisor,
     [switch]$SkipBackupTask
 )

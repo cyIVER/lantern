@@ -41,7 +41,7 @@ add to `~/.codex/config.toml`:
 ```toml
 [mcp_servers.lantern-router]
 command = "uv"
-args = ["--directory", "C:\Users\iveri\Documents\code\lantern\mcp\router", "run", "server.py"]
+args = ["--directory", "<repo-root>/mcp/router", "run", "server.py"]
 ```
 
 ## Tools

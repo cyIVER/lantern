@@ -12,11 +12,11 @@ Java 21, roughly 485 mods, pinned to one exact CurseForge release.
 | RCON | `25575`, LAN only |
 | Slots | 8 |
 | Server heap | 10 GB (11 GB container) |
-| Minecraft UI | `192.168.0.115:8093` — implemented here; deployment pending the release gate |
+| Minecraft UI | `192.168.0.115:8093` — deployed home and schematic workspace; named-admin portal pending release |
 
-> **Operational state rechecked 2026-08-26:** LANtern reported Minecraft
-> running. This gate did not re-verify a player joining from another LAN host,
-> so treat the next join as a connection test before relying on it for a party.
+> **Operational state rechecked 2026-08-26:** Minecraft reached ready state and
+> accepted its first real LAN player, SicQze. Server boot, RCON, port reachability
+> and an actual modded-client join have all been exercised.
 
 Start and stop it from the **LANtern landing page**, <http://192.168.0.115:8090>,
 or with `lantern use minecraft` on the VM. Starting it stops whatever else is
@@ -120,34 +120,63 @@ docker compose exec -T panel php artisan tinker --execute="
 
 ### Minecraft UI and shared schematics
 
-The repository now contains an always-on Minecraft UI for port **8093**. Its
-home page points players to the server and its `/schematics/` workspace embeds
-Create Schematic Viewer for catalogue browsing, 3D inspection, conversion and
-downloads. Reading the shared library is anonymous. Adding a schematic, adding
-a version, restoring or removing one requires the UI's administrator sign-in,
-which is disabled on LANtern's current plain-HTTP deployment.
-Pelican remains the place for the game console, files and mod management; power
-remains on the LANtern landing page.
+The always-on Minecraft UI is deployed on port **8093**. Its home page points
+players to the server and its `/schematics/` workspace embeds Create Schematic
+Viewer for catalog browsing, 3D inspection, conversion and downloads. The
+private viewer remains available when the game is stopped.
+
+The expanded named-admin portal is implemented on
+`feature/minecraft-admin-portal` and is pending review, merge and selective VM
+deployment. In that release:
+
+- ordinary LAN users can start, stop or restart Minecraft and can upload a
+  schematic with an optional catalog-promotion request;
+- title, tags and the unrestricted `CC0-1.0` license are recommended and
+  autofilled; uploads that satisfy every validation requirement can publish
+  automatically, while the others raise the pending-review badge;
+- named admins `iveri` and `scotlandf` can publish or reject queued submissions,
+  edit allowlisted text configuration, stage and change mods, create backups,
+  perform confirmed restores, and inspect named audit activity.
+
+The portal uses LANtern's existing control service for power, preserving the
+one-game-at-a-time confirmation. Native file, mod, backup and restore operations
+use Pelican's client API through a server-side token that is never sent to the
+browser. LANtern records immutable local audit entries with the named portal
+actor; because Pelican uses one service token, upstream Pelican may show only
+that service identity. The full Pelican panel remains a separate link opened in
+a new tab; it is not embedded in an iframe.
 
 The viewer is a private sidecar on the internal Docker network. Port `4173` is
 not published, the browser never receives its trust token, and its persistent
-data lives in the named volume `lantern-schematic-viewer-data`. Both the UI and
-viewer use `restart: unless-stopped`, independently of the game process, so the
-schematic library remains available when Minecraft is stopped.
+data lives in `lantern-schematic-viewer-data`. Review and audit state lives in
+`lantern-minecraft-ui-data`. Preserve both named volumes during deployment and
+rollback. The pinned viewer v1.0.1 release includes the Asset Admin overlay fix;
+this portal phase does not require a new viewer release.
 
-> **Release status:** this feature is implemented in the repository but has not
-> been deployed to the VM. Port 8093 remains unavailable until the separate
-> release gate approves an immutable viewer image digest, creates the three
-> file secrets, and starts only `schematic-viewer` and `minecraft-ui`. The
-> landing page's existing server-side TCP probe will expose the link only after
-> the UI answers. That selective deployment does not restart Wings or the
-> running Minecraft server.
+LANtern intentionally enables named administration over HTTP on its trusted
+private LAN with `MINECRAFT_ALLOW_INSECURE_ADMIN=true` and
+`MINECRAFT_SECURE_COOKIE=false`. Admin sessions remain signed, expiring,
+`HttpOnly` and `SameSite=Strict`, but traffic is not transport-encrypted. Never
+publish port `8093` to the internet.
 
-LANtern currently uses plain HTTP on a trusted private LAN. Anonymous browsing
-therefore works, but administrator login and all mutation requests fail closed.
-Do not expose port 8093 to the internet or enable the insecure CI override on
-the VM. Put the UI behind HTTPS and set `MINECRAFT_SECURE_COOKIE=true` to enable
-administration with an `HttpOnly`, `SameSite=Strict`, `Secure` cookie.
+Browser mutations accept only configured exact scheme/host/port origins; a
+request cannot redefine trust with a forged `Host` header. Admin uploads are
+authorized before large bodies are read. Mutations use durable idempotency keys,
+and destructive confirmations are tied to one exact request. Signing out stores
+a server-side revocation through the session's original expiry.
+
+The pending schematic queue is bounded to 500 submissions and 2 GiB of payloads,
+with 20 uploads per source IP per hour. After 30 days, expired pending payload
+bytes are purged while their metadata and workflow events remain. A portal
+restore stops Minecraft, proves Pelican reports it offline before creating the
+verified safety backup and again before replacement, and deliberately leaves it
+stopped. Its receipt reports `server_state=stopped`.
+
+Before the portal cutover, complete and verify a fresh backup copied to Windows,
+including its `SHA256SUMS`. Generate the named-user and Pelican-token secrets
+interactively, then deploy only the affected application services. The cutover
+does not restart Wings or the running Minecraft game; see
+[stack/README.md](../stack/README.md#minecraft-admin-portal-release-pending-approval).
 
 ---
 

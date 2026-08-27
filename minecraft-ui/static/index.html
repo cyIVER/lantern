@@ -24,10 +24,10 @@
         </div>
       </div>
 
-      <div class="session-tools" aria-label="Schematic library access">
+      <div class="session-tools" aria-label="Minecraft portal access">
         <span class="session-state" id="session-state" aria-live="polite">Checking access…</span>
         <button class="button button-secondary" id="login-open" type="button" hidden>
-          Administrator sign in
+          Sign in
         </button>
         <button class="button button-secondary" id="logout-button" type="button" hidden>
           Sign out
@@ -57,9 +57,20 @@
           tabindex="-1"
           data-tab="schematics"
         >Schematics</button>
+        <button
+          class="tab"
+          id="tab-admin"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-admin"
+          tabindex="-1"
+          data-tab="admin"
+          hidden
+        >Admin <span class="tab-badge" id="admin-pending-badge" aria-label="pending reviews" hidden>0</span></button>
       </div>
       <span class="workspace-state" id="workspace-state" data-state="checking" aria-live="polite">
-        Checking schematic workspace…
+        Checking Minecraft workspace…
       </span>
     </nav>
 
@@ -76,12 +87,27 @@
             <div class="server-summary">
               <div>
                 <p class="eyebrow">Minecraft server</p>
-                <h2 id="server-heading">All the Mods 10</h2>
+                <div class="title-status-row">
+                  <h2 id="server-heading">All the Mods 10</h2>
+                  <span class="status-pill" id="minecraft-state" data-state="checking">Checking</span>
+                </div>
                 <p class="server-description">
                   The game server is managed by LANtern. This workspace remains available while the game is offline.
                 </p>
               </div>
-              <a class="button button-primary" id="manage-server" href="/">Manage on LANtern</a>
+              <a class="button button-secondary" id="manage-server" href="/">Open LANtern</a>
+            </div>
+
+            <div class="server-controls" id="server-controls" aria-labelledby="server-controls-heading" aria-busy="true">
+              <div>
+                <span class="field-label" id="server-controls-heading">Server controls</span>
+                <p id="minecraft-status-copy" role="status" aria-live="polite">Checking server status…</p>
+              </div>
+              <div class="control-actions">
+                <button class="button button-primary" type="button" data-power-action="start" disabled>Start</button>
+                <button class="button button-secondary" type="button" data-power-action="restart" disabled>Restart</button>
+                <button class="button button-danger" type="button" data-power-action="stop" disabled>Stop</button>
+              </div>
             </div>
 
             <div class="connect-block">
@@ -164,23 +190,139 @@
         tabindex="0"
         hidden
       >
-        <iframe
-          id="schematic-frame"
-          src="/schematics/"
-          title="Schematic library and 3D viewer"
-          loading="eager"
-        >
-          <p>
-            Your browser cannot display the schematic workspace.
-            <a href="/schematics/">Open the schematic library and 3D viewer</a>.
-          </p>
-        </iframe>
+        <div class="schematics-layout">
+          <form class="upload-strip" id="schematic-upload-form">
+            <div class="upload-copy">
+              <p class="eyebrow">Contribute</p>
+              <strong>Upload a schematic</strong>
+              <span>Uploads are shared under CC0 with no licensing restrictions.</span>
+            </div>
+            <label class="compact-field">
+              <span>File</span>
+              <input id="schematic-file" type="file" accept=".schem,.schematic,.litematic,.nbt" required>
+            </label>
+            <label class="compact-field">
+              <span>Title</span>
+              <input id="schematic-title" type="text" maxlength="120" placeholder="Autofilled from filename" required>
+            </label>
+            <label class="checkbox-field">
+              <input id="schematic-promote" type="checkbox">
+              <span>Promote if all checks pass</span>
+            </label>
+            <button class="button button-primary" id="schematic-submit" type="submit">Upload</button>
+            <p class="inline-status" id="schematic-upload-status" role="status" aria-live="polite"></p>
+          </form>
+          <div class="schematic-frame-wrap">
+            <iframe
+              id="schematic-frame"
+              src="/schematics/"
+              title="Schematic library and 3D viewer"
+              loading="eager"
+            >
+              <p>
+                Your browser cannot display the schematic workspace.
+                <a href="/schematics/">Open the schematic library and 3D viewer</a>.
+              </p>
+            </iframe>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="tab-panel admin-panel"
+        id="panel-admin"
+        role="tabpanel"
+        aria-labelledby="tab-admin"
+        tabindex="0"
+        hidden
+      >
+        <div class="admin-wrap">
+          <div class="admin-heading">
+            <div>
+              <p class="eyebrow">Administrator workspace</p>
+              <h2>Server and catalog administration</h2>
+              <p id="admin-welcome">Signed-in administrators can review changes and operate Minecraft.</p>
+            </div>
+            <a class="button button-secondary" id="pelican-link" href="http://localhost/" target="_blank" rel="noopener noreferrer">
+              Open Pelican <span class="visually-hidden">in a new tab</span>
+            </a>
+          </div>
+
+          <div class="admin-grid">
+            <section class="admin-card admin-card-wide" aria-labelledby="review-heading">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">Needs attention</p>
+                  <h3 id="review-heading">Schematic review queue</h3>
+                </div>
+                <span class="status-pill" id="review-count">0 pending</span>
+              </div>
+              <div class="empty-state" id="review-queue" role="status">No schematics are waiting for review.</div>
+            </section>
+
+            <section class="admin-card" aria-labelledby="files-heading">
+              <p class="eyebrow">Configuration</p>
+              <h3 id="files-heading">Files</h3>
+              <p>Edit allowlisted server files with validated, atomic saves.</p>
+              <div class="admin-surface" id="admin-files" aria-live="polite">File operations are not available yet.</div>
+              <form class="editor-form" id="file-editor" hidden>
+                <div class="surface-toolbar">
+                  <strong id="file-editor-name">Selected file</strong>
+                  <span id="file-editor-revision"></span>
+                </div>
+                <textarea id="file-editor-content" rows="12" spellcheck="false" aria-label="File contents"></textarea>
+                <div class="surface-actions">
+                  <button class="button button-primary" id="file-save" type="submit">Save file</button>
+                  <span class="inline-status" id="file-status" role="status" aria-live="polite"></span>
+                </div>
+              </form>
+            </section>
+
+            <section class="admin-card" aria-labelledby="mods-heading">
+              <p class="eyebrow">Pack management</p>
+              <h3 id="mods-heading">Mods</h3>
+              <p>Review installed mods and stage approved changes.</p>
+              <form class="surface-actions" id="mod-upload-form">
+                <label class="compact-field grow-field">
+                  <span>Upload JAR disabled</span>
+                  <input id="mod-file" type="file" accept=".jar,application/java-archive" required>
+                </label>
+                <button class="button button-secondary" id="mod-upload" type="submit">Stage mod</button>
+              </form>
+              <p class="inline-status" id="mod-status" role="status" aria-live="polite"></p>
+              <div class="admin-surface" id="admin-mods" aria-live="polite">Mod operations are not available yet.</div>
+            </section>
+
+            <section class="admin-card" aria-labelledby="restore-heading">
+              <p class="eyebrow">Recovery</p>
+              <h3 id="restore-heading">Backups and restores</h3>
+              <p>Backup creation stops Minecraft, proves it offline, and leaves it stopped. Only offline-marked, checksum-verified backups can be restored.</p>
+              <form class="surface-actions" id="backup-form">
+                <label class="compact-field grow-field">
+                  <span>Backup name</span>
+                  <input id="backup-name" type="text" maxlength="80" placeholder="Minecraft UI safety backup">
+                </label>
+                <button class="button button-secondary" id="backup-create" type="submit">Create backup</button>
+              </form>
+              <p class="inline-status" id="backup-status" role="status" aria-live="polite"></p>
+              <div class="admin-surface" id="admin-restores" aria-live="polite">No restore points are available.</div>
+              <div class="admin-surface" id="admin-jobs">No operations are in progress.</div>
+            </section>
+
+            <section class="admin-card" aria-labelledby="audit-heading">
+              <p class="eyebrow">Accountability</p>
+              <h3 id="audit-heading">Audit activity</h3>
+              <p>Recent administrative actions and outcomes.</p>
+              <div class="admin-surface" id="admin-audit">No administrative activity yet.</div>
+            </section>
+          </div>
+        </div>
       </section>
     </main>
   </div>
 
   <dialog class="login-dialog" id="login-dialog" aria-labelledby="login-title" aria-describedby="login-copy">
-    <form class="login-form" id="login-form" method="POST" action="/api/session/login">
+    <form class="login-form" id="login-form" method="POST" action="/api/intents">
       <div class="dialog-heading">
         <div>
           <p class="eyebrow">Protected access</p>
@@ -188,9 +330,20 @@
         </div>
         <button class="icon-button" id="login-close" type="button" aria-label="Close sign-in dialog">&#215;</button>
       </div>
-      <p id="login-copy">
-        Sign in to add, version, restore, or remove schematics from the shared library.
-      </p>
+      <p id="login-copy">Use your named LANtern administrator account.</p>
+      <label class="password-field" for="admin-username">
+        <span>Username</span>
+        <input
+          id="admin-username"
+          name="username"
+          type="text"
+          autocomplete="username"
+          autocapitalize="none"
+          spellcheck="false"
+          required
+          maxlength="64"
+        >
+      </label>
       <label class="password-field" for="admin-password">
         <span>Password</span>
         <input
@@ -206,6 +359,25 @@
       <div class="dialog-actions">
         <button class="button button-secondary" id="login-cancel" type="button">Cancel</button>
         <button class="button button-primary" id="login-submit" type="submit">Sign in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="login-dialog confirm-dialog" id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+    <form class="login-form" id="confirm-form" method="dialog">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">Confirm operation</p>
+          <h2 id="confirm-title">Review server changes</h2>
+        </div>
+        <button class="icon-button" id="confirm-close" type="button" aria-label="Close confirmation dialog">&#215;</button>
+      </div>
+      <p id="confirm-message">Confirm this Minecraft operation.</p>
+      <ul class="effect-list" id="confirm-effects" hidden></ul>
+      <p class="form-error" id="confirm-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button class="button button-secondary" id="confirm-cancel" type="button">Cancel</button>
+        <button class="button button-primary" id="confirm-submit" type="submit">Confirm</button>
       </div>
     </form>
   </dialog>

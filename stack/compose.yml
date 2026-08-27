@@ -71,6 +71,9 @@ services:
       DB_DATABASE: panel
       DB_USERNAME: pelican
       DB_PASSWORD: ${DB_PASSWORD:?set in .env}
+    networks:
+      - default
+      - minecraft-admin-backplane
 
   wings:
     image: ghcr.io/pelican/wings:latest
@@ -129,6 +132,9 @@ services:
       # RCON goes to the published game port on the Windows host, not to a
       # container -- the game runs on Wings' own network.
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - minecraft-admin-backplane
 
   # Minecraft's product UI is intentionally independent of the game process.
   # It stays reachable when the server is stopped and degrades cleanly if the
@@ -142,18 +148,35 @@ services:
       - "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8093:8093"
     environment:
       SCHEMATIC_VIEWER_URL: http://schematic-viewer:4173
-      MINECRAFT_ADMIN_PASSWORD_HASH_FILE: /run/secrets/minecraft_admin_password_hash
+      MINECRAFT_ADMIN_USERS_FILE: /run/secrets/minecraft_admin_users
       MINECRAFT_SESSION_SECRET_FILE: /run/secrets/minecraft_session_secret
       SCHEMATIC_VIEWER_ADMIN_TOKEN_FILE: /run/secrets/schematic_viewer_admin_token
       MINECRAFT_SESSION_TTL_SECONDS: "28800"
-      MINECRAFT_ALLOW_INSECURE_ADMIN: "false"
-      # LANtern is deliberately plain HTTP on the private LAN. Change this to
-      # true only after port 8093 is served through HTTPS.
+      # Named administration over HTTP is an explicit trusted-LAN decision.
+      MINECRAFT_ALLOW_INSECURE_ADMIN: "${MINECRAFT_ALLOW_INSECURE_ADMIN:-true}"
       MINECRAFT_SECURE_COOKIE: "${MINECRAFT_SECURE_COOKIE:-false}"
+      MINECRAFT_TRUSTED_BROWSER_ORIGINS: "http://${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8093,http://lantern:8093,http://127.0.0.1:8093"
+      MINECRAFT_PORTAL_DATA_DIR: /data
+      SCHEMATIC_QUEUE_MAX_COUNT: "${SCHEMATIC_QUEUE_MAX_COUNT:-500}"
+      SCHEMATIC_QUEUE_MAX_BYTES: "${SCHEMATIC_QUEUE_MAX_BYTES:-2147483648}"
+      SCHEMATIC_UPLOADS_PER_IP: "${SCHEMATIC_UPLOADS_PER_IP:-20}"
+      SCHEMATIC_RATE_WINDOW_SECONDS: "${SCHEMATIC_RATE_WINDOW_SECONDS:-3600}"
+      SCHEMATIC_RETENTION_SECONDS: "${SCHEMATIC_RETENTION_SECONDS:-2592000}"
+      SCHEMATIC_MAX_CONCURRENT_UPLOADS: "${SCHEMATIC_MAX_CONCURRENT_UPLOADS:-4}"
+      SCHEMATIC_ADMISSION_TTL_SECONDS: "${SCHEMATIC_ADMISSION_TTL_SECONDS:-600}"
+      LANTERN_CONTROL_URL: http://ui:8090
+      PELICAN_URL: http://panel
+      PELICAN_VIRTUAL_HOST: "${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}"
+      PELICAN_API_KEY_FILE: /run/secrets/pelican_client_api_key
+      PELICAN_MINECRAFT_SERVER_NAME: LANtern Minecraft
+      PELICAN_UPLOAD_ORIGINS: "http://${LANTERN_MINECRAFT_UI_BIND_IP:-192.168.0.115}:8080"
     secrets:
-      - minecraft_admin_password_hash
+      - minecraft_admin_users
       - minecraft_session_secret
       - schematic_viewer_admin_token
+      - pelican_client_api_key
+    volumes:
+      - minecraft-ui-data:/data
     group_add:
       # Compose file secrets are bind mounts outside Swarm. Preserve non-root
       # containers by granting only the host secret-file group, never world read.
@@ -161,6 +184,7 @@ services:
     networks:
       - minecraft-edge
       - schematic-backplane
+      - minecraft-admin-backplane
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -168,8 +192,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    mem_limit: 256m
-    cpus: 0.50
+    mem_limit: 768m
+    cpus: 1.00
     pids_limit: 128
     stop_grace_period: 15s
     healthcheck:
@@ -225,14 +249,18 @@ volumes:
   pelican-db:
   schematic-viewer-data:
     name: lantern-schematic-viewer-data
+  minecraft-ui-data:
+    name: lantern-minecraft-ui-data
 
 secrets:
-  minecraft_admin_password_hash:
-    file: ./secrets/minecraft-admin-password-hash
+  minecraft_admin_users:
+    file: ./secrets/minecraft-admins.json
   minecraft_session_secret:
     file: ./secrets/minecraft-session-secret
   schematic_viewer_admin_token:
     file: ./secrets/schematic-viewer-admin-token
+  pelican_client_api_key:
+    file: ./secrets/pelican-client-api-key
 
 networks:
   default:
@@ -247,6 +275,8 @@ networks:
   schematic-backplane:
     internal: true
   minecraft-edge:
+  minecraft-admin-backplane:
+    internal: true
   wings0:
     name: wings0
     driver: bridge

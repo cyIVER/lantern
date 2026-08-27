@@ -19,7 +19,7 @@ Named for a beacon on the LAN.
 | 🏮 **LANtern** | **<http://192.168.0.115:8090>** | The landing page: start or stop a game, and the host dashboard. Start here. |
 | 🎮 **CS2 Control** | **<http://192.168.0.115:8090/cs2>** | Players, maps, modes, match control, RCON console. No login. |
 | 🌾 **Stardew Control** | **<http://192.168.0.115:8092>** | The farm: invite code, players, mods, farm state. No login. |
-| ⛏ **Minecraft** | **<http://192.168.0.115:8093>** | Minecraft home and shared schematic library. Prepared in this branch; unavailable until the release gate deploys it. |
+| ⛏ **Minecraft** | **<http://192.168.0.115:8093>** | Deployed Minecraft home and shared schematic library. Named-admin portal pending release. |
 | 🛠 **Pelican Panel** | **<http://192.168.0.115>** | Files, backups, schedules, subusers, creating more servers. Login required. |
 | 🔫 **Play** | `connect 192.168.0.115:27015` | Paste into the CS2 console |
 
@@ -55,10 +55,10 @@ Everything below runs **on the VM**, over ssh from Windows:
 ssh lantern
 ```
 
-That is an alias in `C:\Users\iveri\.ssh\config` for `iverson@192.168.0.115`,
-authenticating with `C:\Users\iveri\.ssh\lantern_vm`. Any terminal will do —
-PowerShell, Windows Terminal, Git Bash — because the shell you get is the VM's,
-not Windows'.
+Configure `lantern` in your user SSH config with the VM address, login, and
+private-key path for your installation. Any terminal will do—PowerShell,
+Windows Terminal, or Git Bash—because the shell you get is the VM's, not
+Windows'.
 
 The `lantern` control script is symlinked into `/usr/local/bin`, so it works from
 any directory on the VM:
@@ -110,7 +110,7 @@ Every port below is on the VM, reachable directly from the LAN.
 | Stardew Control UI | `8092` | with Stardew | Started with the farm and deliberately not stopped with it |
 | Stardew HTTP API | `8091` | with Stardew | JunimoServer's own REST API |
 | Stardew web VNC | `5800` | with Stardew | Password-protected; drives the running game |
-| Minecraft UI + schematic workspace | `8093` | ✅ after release | Always-on UI; anonymous browsing. Library curation remains disabled until HTTPS is configured. Deployment is pending the release gate |
+| Minecraft UI + schematic workspace | `8093` | ✅ | Always-on home and viewer are deployed; named-admin operations are pending the portal release |
 | Wings daemon | `8080` | ✅ | Panel ↔ game server |
 | SFTP | `2022` | ✅ | Panel file manager |
 | MariaDB / Redis | internal | ✅ | No published ports |
@@ -151,6 +151,7 @@ ui/             landing page + CS2 control UI (FastAPI + vanilla JS, no build st
                 icons extracted from the game
 stardew-ui/     Stardew control UI, its own application on 8092
 stardew/        the Stardew compose project (JunimoServer)
+minecraft-ui/   Minecraft home, schematics, named admin portal and safe adapters
 eggs/           the LANtern CS2 and Minecraft eggs
   src/          install.sh, boot.sh, normalize-plugins.sh (assembled by build-egg.py)
 mcp/router/     read-only MCP tools for the TP-Link router
@@ -189,7 +190,7 @@ They exist, they run nightly, and they land on a different physical disk.
 | | |
 |---|---|
 | Nightly data | Windows scheduled task **"LANtern backup"**, 03:00 → `D:\LANtern-Backups\data` |
-| What is in it | ~165 MB: panel DB (incl. `cs2_weaponpaints`), `/etc/pelican` node token, Minecraft world, CS2 cfg + addons, Stardew saves + config, the gitignored `.env` files |
+| What is in it | Panel DB (incl. `cs2_weaponpaints`), `/etc/pelican` node token, Minecraft world, schematic library, CS2 cfg + addons, Stardew saves + config, and gitignored configuration/secrets. After the portal release this also includes its queue/audit volume and four file secrets |
 | Whole-VM image | `vm\export-vm-image.ps1` → `D:\LANtern-Backups\images`, by hand, VM powered off |
 
 The task exits quietly when the VM is off, which is the normal case. CS2's ~67 GB
@@ -248,18 +249,15 @@ ssh lantern 'cd /opt/lantern/stack && bash bootstrap/cs2-status.sh'
 
 ## Still to do
 
-- **Release the Minecraft UI on `:8093`.** Its application, private schematic
-  sidecar, persistent volume, and selective deployment path are prepared on this
-  feature branch, but nothing has been deployed to the VM. The release gate must
-  first preserve the reviewed immutable viewer image pin, create the three file
-  secrets, and approve the two-service cutover. Plain-HTTP deployment provides
-  anonymous browsing only; administration waits for HTTPS. The landing-page link
-  remains gated on its server-side TCP probe until then.
-- **A real Minecraft LAN session.** The server installs, boots, answers RCON and
-  accepts a TCP connection on 25565, and the world is in the nightly backup — but
-  no actual player has ever connected to it. Everything about joining in
-  [MINECRAFT.md](docs/MINECRAFT.md) is written from the pack's requirements, not
-  from having watched someone do it.
+- **Release the named Minecraft admin portal.** Port `8093`, the Minecraft home
+  and the private v1.0.1 viewer are already deployed. The portal branch adds
+  anonymous start/stop/restart, schematic submission and promotion, plus named
+  `iveri` and `scotlandf` administration for review, files, mods, backups,
+  restores and audit. Before merge and selective deployment, complete the
+  required PII/secret scan, reviews and CI; then verify a fresh backup with
+  `SHA256SUMS`, generate the four file secrets interactively, and preserve both
+  named data volumes. Trusted-LAN HTTP administration is an accepted decision:
+  `MINECRAFT_ALLOW_INSECURE_ADMIN=true` and `MINECRAFT_SECURE_COOKIE=false`.
 - Whether the CS2 server appears in Steam's **LAN** server browser tab. The
   obstacle that made it impossible is gone; nobody has looked.
 - Friends registered as admins — send SteamID64s, see [USING.md](docs/USING.md)

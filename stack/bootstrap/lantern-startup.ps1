@@ -16,7 +16,7 @@
 [CmdletBinding()]
 param(
     [string]$Distro   = 'Ubuntu-26.04',
-    [string]$StackDir = 'C:\Users\iveri\Documents\code\lantern\stack',
+    [string]$StackDir = (Split-Path -Parent $PSScriptRoot),
     [int]$TimeoutSec  = 300
 )
 
