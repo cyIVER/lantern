@@ -93,6 +93,13 @@ then exits nonzero so Task Scheduler records a failure. When a running
 Minecraft server cannot be quiesced, the world archive is omitted rather than
 publishing a potentially inconsistent restore point.
 
+Restore eligibility also requires `SHA256SUMS`, a machine-verifiable inventory
+covering every other regular file in the set. The VM verifies the inventory
+before reporting success, and the Windows pull independently rejects missing,
+malformed, incomplete, extra, or hash-mismatched files before status acceptance
+or retention. `MANIFEST.txt` remains descriptive operator metadata; it is not a
+checksum file.
+
 The set is roughly 165 MB and covers everything that cannot be downloaded again:
 
 | | |

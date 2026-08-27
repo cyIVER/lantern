@@ -33,7 +33,9 @@ DEST="${LANTERN_BACKUP_DIR:-/var/backups/lantern}"
 KEEP="${LANTERN_BACKUP_KEEP:-7}"
 STACK="${LANTERN_STACK:-/opt/lantern/stack}"
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
-OUT="${DEST}/${STAMP}"
+FINAL_OUT="${DEST}/${STAMP}"
+OUT=
+CHECKSUM_TMP=
 
 CS2_UUID=a530efc8-3095-4030-8ddb-c82c1d5c56fb
 MC_UUID=2be9425c-1141-4181-b0a0-34f38d84fb7f
@@ -116,13 +118,32 @@ restart_schematic_viewer() {
   SCHEMATIC_CHECKSUM_TMP=
 }
 finish_backup() {
+  local exit_status=$?
+  trap - EXIT
   resume_minecraft_saves || true
   restart_schematic_viewer
+  [ -z "$CHECKSUM_TMP" ] || rm -f -- "$CHECKSUM_TMP"
+  CHECKSUM_TMP=
+  if [ -n "$OUT" ]; then
+    printf 'LANTERN_BACKUP_RESULT_V1:%s/\n' "${OUT%/}"
+  fi
+  exit "$exit_status"
 }
 trap finish_backup EXIT
 
 cd "$STACK" || { bad "no stack at $STACK"; exit 1; }
-sudo mkdir -p "$OUT" && sudo chown "$(id -u):$(id -g)" "$OUT" || { bad "cannot write $OUT"; exit 1; }
+sudo mkdir -p "$DEST" || { bad "cannot create $DEST"; exit 1; }
+if [ -e "$FINAL_OUT" ]; then
+  bad "backup set $FINAL_OUT already exists; refusing to mix same-stamp payloads"
+  exit 1
+fi
+if ! OUT=$(sudo mktemp -d "${DEST}/.${STAMP}.staging.XXXXXX") \
+   || ! sudo chown "$(id -u):$(id -g)" "$OUT" \
+   || ! chmod 700 "$OUT"; then
+  [ -z "$OUT" ] || sudo rm -rf -- "$OUT"
+  bad "cannot create backup staging set in $DEST"
+  exit 1
+fi
 
 step "Backing up to ${OUT}"
 
@@ -409,13 +430,11 @@ else
 fi
 
 # ------------------------------------------------------------------ finish
-if [ "$FAILED" -gt 0 ]; then
-  BACKUP_STATUS=incomplete
-else
-  BACKUP_STATUS=complete
-fi
-if python3 - "$OUT/BACKUP_STATUS.json" "$STAMP" "$BACKUP_STATUS" "$FAILED" \
-  "$MC_BACKUP_STATUS" "${FAILURE_CODES[@]}" <<'PY'
+write_backup_status() {
+  local backup_status=complete
+  [ "$FAILED" -gt 0 ] && backup_status=incomplete
+  python3 - "$OUT/BACKUP_STATUS.json" "$STAMP" "$backup_status" "$FAILED" \
+    "$MC_BACKUP_STATUS" "${FAILURE_CODES[@]}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -432,24 +451,142 @@ payload = {
 }
 Path(path).write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
 PY
-then
-  if ! chmod 600 "$OUT/BACKUP_STATUS.json"; then
-    rm -f -- "$OUT/BACKUP_STATUS.json"
-    fail_code backup.status_metadata_failed '  backup status permissions could not be secured'
+  chmod 600 "$OUT/BACKUP_STATUS.json"
+}
+
+write_descriptive_manifest() {
+  {
+    echo "taken:    $(date -u +%FT%TZ)"
+    echo "host:     $(hostname)"
+    echo "commit:   $(git -C /opt/lantern rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    echo "failures: ${FAILED}"
+    echo
+    ls -lh "$OUT" | tail -n +2
+  } > "$OUT/MANIFEST.txt"
+}
+
+safe_backup_basename() {
+  case "$1" in
+    BACKUP_STATUS.json|MANIFEST.txt|config.tgz|cs2-config.tgz|databases.sql.gz|etc-pelican.tgz|minecraft-world.tgz|schematic-viewer-data.tgz|schematic-viewer-data.tgz.sha256|stardew-config.tgz|stardew-saves.tgz)
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+verify_checksum_inventory() {
+  local directory=$1 manifest=$2
+  (
+    [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1
+    cd "$directory" || exit 1
+    [ -f "$manifest" ] && [ ! -L "$manifest" ] || exit 1
+    shopt -s dotglob nullglob
+    declare -A listed=()
+    local line digest basename
+    while IFS= read -r line || [ -n "$line" ]; do
+      [[ "$line" =~ ^([0-9a-f]{64})\ \ ([A-Za-z0-9][A-Za-z0-9._-]*)$ ]] || exit 1
+      digest=${BASH_REMATCH[1]}
+      basename=${BASH_REMATCH[2]}
+      safe_backup_basename "$basename" || exit 1
+      [ -z "${listed[$basename]+present}" ] || exit 1
+      [ -f "$basename" ] && [ ! -L "$basename" ] || exit 1
+      listed[$basename]=$digest
+    done < "$manifest"
+
+    local entry actual_count=0
+    for entry in *; do
+      [ "$entry" = SHA256SUMS ] && continue
+      [ -f "$entry" ] && [ ! -L "$entry" ] || exit 1
+      safe_backup_basename "$entry" || exit 1
+      [ -n "${listed[$entry]+present}" ] || exit 1
+      actual_count=$((actual_count + 1))
+    done
+    [ "${#listed[@]}" -eq "$actual_count" ] || exit 1
+    sha256sum -c --strict -- "$manifest" >/dev/null
+  )
+}
+
+publish_checksum_manifest() {
+  CHECKSUM_TMP=$(sudo mktemp "${OUT}.SHA256SUMS.XXXXXX") || return 1
+  if ! sudo chown "$(id -u):$(id -g)" "$CHECKSUM_TMP"; then
+    sudo rm -f -- "$CHECKSUM_TMP"
+    CHECKSUM_TMP=
+    return 1
   fi
-else
+  if ! (
+    cd "$OUT" || exit 1
+    export LC_ALL=C
+    shopt -s dotglob nullglob
+    for payload in *; do
+      [ "$payload" = SHA256SUMS ] && continue
+      [ -f "$payload" ] || exit 1
+      safe_backup_basename "$payload" || exit 1
+      checksum=$(sha256sum -- "$payload") || exit 1
+      digest=${checksum%% *}
+      [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
+      printf '%s  %s\n' "$digest" "$payload"
+    done
+  ) > "$CHECKSUM_TMP"; then
+    return 1
+  fi
+  chmod 600 "$CHECKSUM_TMP" || return 1
+  verify_checksum_inventory "$OUT" "$CHECKSUM_TMP" || return 1
+  mv -- "$CHECKSUM_TMP" "$OUT/SHA256SUMS" || return 1
+  CHECKSUM_TMP=
+  verify_checksum_inventory "$OUT" SHA256SUMS
+}
+
+rewrite_incomplete_metadata() {
+  local failure_context=$1
+  if ! write_descriptive_manifest; then
+    rm -f -- "$OUT/MANIFEST.txt"
+    fail_code backup.manifest_failed \
+      "  descriptive backup manifest could not be updated after $failure_context"
+  fi
+  if ! write_backup_status; then
+    rm -f -- "$OUT/BACKUP_STATUS.json"
+    fail_code backup.status_metadata_failed \
+      "  incomplete backup status could not be written after $failure_context"
+  fi
+}
+
+if ! write_descriptive_manifest; then
+  rm -f -- "$OUT/MANIFEST.txt"
+  fail_code backup.manifest_failed '  descriptive backup manifest could not be written'
+fi
+
+if ! write_backup_status; then
   rm -f -- "$OUT/BACKUP_STATUS.json"
   fail_code backup.status_metadata_failed '  backup status metadata could not be written'
 fi
 
-{
-  echo "taken:    $(date -u +%FT%TZ)"
-  echo "host:     $(hostname)"
-  echo "commit:   $(git -C /opt/lantern rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  echo "failures: ${FAILED}"
-  echo
-  ls -lh "$OUT" | tail -n +2
-} > "$OUT/MANIFEST.txt"
+if [ -f "$OUT/MANIFEST.txt" ] && [ -f "$OUT/BACKUP_STATUS.json" ]; then
+  if publish_checksum_manifest; then
+    ok '  SHA256SUMS verified'
+  else
+    rm -f -- "$OUT/SHA256SUMS"
+    [ -n "$CHECKSUM_TMP" ] && rm -f -- "$CHECKSUM_TMP"
+    CHECKSUM_TMP=
+    fail_code backup.checksum_manifest_failed \
+      '  checksum manifest could not be generated and verified'
+    rewrite_incomplete_metadata 'checksum failure'
+  fi
+fi
+
+if ! sudo mv -T -- "$OUT" "$FINAL_OUT"; then
+  rm -f -- "$OUT/SHA256SUMS"
+  fail_code backup.set_publish_failed \
+    '  finalized backup set could not be published atomically'
+  rewrite_incomplete_metadata 'publish failure'
+else
+  OUT=$FINAL_OUT
+  if ! verify_checksum_inventory "$OUT" SHA256SUMS; then
+    rm -f -- "$OUT/SHA256SUMS"
+    fail_code backup.checksum_manifest_failed \
+      '  published backup set failed final checksum verification'
+    rewrite_incomplete_metadata 'final verification failure'
+  fi
+fi
 
 step 'Pruning'
 if [ "$FAILED" -gt 0 ]; then
@@ -467,24 +604,37 @@ try:
 except (OSError, ValueError):
     raise SystemExit(1)
 backup_id = Path(sys.argv[1]).parent.name
-valid_minecraft = status.get("components", {}).get("minecraft_world") in {
+if type(status) is not dict:
+    raise SystemExit(1)
+components = status.get("components")
+minecraft_world = components.get("minecraft_world") if type(components) is dict else None
+valid_minecraft = type(minecraft_world) is str and minecraft_world in {
     "offline_consistent",
     "quiesced_consistent",
 }
 raise SystemExit(
     0
-    if status.get("schema") == 1
+    if type(status.get("schema")) is int
+    and status.get("schema") == 1
+    and type(status.get("event")) is str
     and status.get("event") == "backup.completed"
+    and type(status.get("backup_id")) is str
     and status.get("backup_id") == backup_id
+    and type(status.get("status")) is str
     and status.get("status") == "complete"
+    and type(status.get("failure_count")) is int
     and status.get("failure_count") == 0
+    and type(status.get("failure_codes")) is list
     and status.get("failure_codes") == []
+    and type(components) is dict
     and valid_minecraft
     else 1
 )
 PY
     then
-      complete_sets+=("$directory")
+      if verify_checksum_inventory "$directory" "$directory/SHA256SUMS"; then
+        complete_sets+=("$directory")
+      fi
     fi
   done < <(ls -1d "${DEST}"/*/ 2>/dev/null | sort)
   old=()
