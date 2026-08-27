@@ -149,6 +149,10 @@ services:
       - minecraft_admin_password_hash
       - minecraft_session_secret
       - schematic_viewer_admin_token
+    group_add:
+      # Compose file secrets are bind mounts outside Swarm. Preserve non-root
+      # containers by granting only the host secret-file group, never world read.
+      - "${LANTERN_SECRET_GID:-1000}"
     networks:
       - minecraft-edge
       - schematic-backplane
@@ -188,6 +192,8 @@ services:
       - schematic-viewer-data:/data
     secrets:
       - schematic_viewer_admin_token
+    group_add:
+      - "${LANTERN_SECRET_GID:-1000}"
     networks:
       - schematic-backplane
     read_only: true

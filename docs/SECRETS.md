@@ -241,8 +241,16 @@ docker run --rm -it --user "$(id -u):$(id -g)" \
 
 openssl rand -base64 48 > secrets/minecraft-session-secret
 openssl rand -base64 48 > secrets/schematic-viewer-admin-token
-chmod 600 secrets/*
+secret_gid=$(id -g)
+chgrp "$secret_gid" secrets/*
+chmod 640 secrets/*
 ```
+
+Set `LANTERN_SECRET_GID` in `stack/.env` to the numeric value printed by
+`id -g`. Compose adds that group to both otherwise non-root containers. This is
+required because file-backed Compose secrets retain their host ownership and
+mode; `0600` files would be unreadable inside the hardened containers. Do not
+make the files world-readable.
 
 The current LANtern deployment is plain HTTP. The signed session cookie is
 `HttpOnly` and `SameSite=Strict`, but deliberately lacks `Secure` because a

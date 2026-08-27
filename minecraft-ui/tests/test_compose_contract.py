@@ -35,6 +35,7 @@ def test_compose_hardens_both_new_services_and_mounts_file_secrets() -> None:
         assert service["cap_drop"] == ["ALL"]
         assert "no-new-privileges:true" in service["security_opt"]
         assert service["restart"] == "unless-stopped"
+        assert service["group_add"] == ["${LANTERN_SECRET_GID:-1000}"]
 
     assert set(compose["secrets"]) >= {
         "minecraft_admin_password_hash",
@@ -55,3 +56,9 @@ def test_ci_uses_the_read_only_cross_repository_viewer_key() -> None:
     assert checkout["with"]["repository"] == "ScotsGamez/create-schematic-viewer"
     assert checkout["with"]["ssh-key"] == "${{ secrets.SCHEMATIC_VIEWER_DEPLOY_KEY }}"
     assert checkout["with"]["persist-credentials"] is False
+
+    secret_step = next(
+        step for step in steps if step.get("name") == "create disposable file secrets"
+    )
+    assert 'chmod 640 stack/secrets/*' in secret_step["run"]
+    assert 'LANTERN_SECRET_GID=$secret_gid' in secret_step["run"]

@@ -123,6 +123,10 @@ jobs:
             python -c 'import sys; from argon2 import PasswordHasher; print(PasswordHasher().hash(sys.stdin.read().strip()))' \
             < "$RUNNER_TEMP/minecraft-admin-password" \
             > stack/secrets/minecraft-admin-password-hash
+          secret_gid=$(id -g)
+          chgrp "$secret_gid" stack/secrets/*
+          chmod 640 stack/secrets/*
+          echo "LANTERN_SECRET_GID=$secret_gid" >> "$GITHUB_ENV"
           touch ui/.env
 
       - name: start only the Minecraft UI and viewer

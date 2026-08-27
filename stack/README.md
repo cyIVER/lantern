@@ -160,10 +160,11 @@ mutable version tag:
 
 ```dotenv
 SCHEMATIC_VIEWER_IMAGE=ghcr.io/scotsgamez/create-schematic-viewer:v1.0.0@sha256:<approved-digest>
+LANTERN_SECRET_GID=1000 # replace with the output of `id -g` on the VM
 ```
 
 Create the three files as described in
-[../docs/SECRETS.md](../docs/SECRETS.md#5-minecraft-ui-and-schematic-library-secrets),
+[../docs/SECRETS.md](../docs/SECRETS.md#6-minecraft-ui-and-schematic-library-secrets),
 then deploy only the two new services:
 
 ```bash
