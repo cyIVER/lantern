@@ -55,11 +55,23 @@ player slots. Useful for someone casting or just watching on a spare screen.
 
 | | | |
 |---|---|---|
-| 🎮 **CS2 Control** | <http://192.168.0.115:8090> | **No login.** Anyone on the LAN can change maps, modes and kick people. |
+| 🏮 **LANtern** | <http://192.168.0.115:8090> | The landing page. Which game is up, buttons to switch, and how the host is doing. **No login.** |
+| 🎮 **CS2 Control** | <http://192.168.0.115:8090/cs2> | **No login.** Anyone on the LAN can change maps, modes and kick people. |
+| 🌾 **Stardew Control** | <http://192.168.0.115:8092> | **No login.** The invite code, the mod list, and Start/Stop for the farm. |
 | 🛠 **Pelican Panel** | <http://192.168.0.115> | Login required — `iveri@lantern.lan` |
 
-The control UI being open is a deliberate choice for a trusted LAN party. If you
-want it locked down, see [CONTROL-UI.md](CONTROL-UI.md).
+`:8090` used to be the CS2 UI directly. It is the LANtern landing page now, and
+the CS2 UI moved down to `/cs2`. Each game UI carries a **← LANtern** link home,
+so you can get between them without typing ports.
+
+The control UIs being open is a deliberate choice for a trusted LAN party, and so
+is the absence of a firewall on the VM — see the note at the end of the
+troubleshooting list. If you want them locked down, see
+[CONTROL-UI.md](CONTROL-UI.md).
+
+Anyone on the LAN can also **stop the game you are playing**, from the landing
+page or either game UI. It asks first, and names what it is about to shut down
+and who gets disconnected, but it does not ask for a password.
 
 Give a friend limited panel access instead of your password: **Pelican → server →
 Users → invite**, and grant only what they need (restart, change map) without file
@@ -78,18 +90,21 @@ router — a guest network, a phone hotspot, or a mesh node in isolation mode.
 
 **2. Is the VM up?**
 `192.168.0.115` belongs to the `lantern` VM, not to Windows. If nothing at all
-answers — not the panel, not the control UI, not ping — start it from Windows:
+answers — not the panel, not the landing page, not ping — start it on the Windows
+box from the Desktop shortcut, **"Start LANtern"**. Equivalently, in any shell:
 
 ```powershell
 VBoxManage startvm lantern --type headless
 ```
 
 Nothing starts it automatically, so this is the normal state after a Windows
-reboot.
+reboot. Give it about 40 seconds.
 
-**3. Is the server running?**
-Check the state pill at <http://192.168.0.115:8090>. If it says `offline`, hit
-**Start**. It takes ~40 seconds to report `running`.
+**3. Is the right game running?**
+Only one game server runs at a time. Open <http://192.168.0.115:8090> and look at
+the cards: if Minecraft or Stardew is up, CS2 is not. Hit **Start** on the one you
+want — it will tell you what it is about to shut down and ask before doing it.
+CS2 takes about 40 seconds to report `running`.
 
 **4. Guest-network isolation.**
 Many routers put guest WiFi on an isolated subnet that cannot see wired devices.
@@ -102,9 +117,17 @@ patched very recently and the server has not restarted since, restart it.
 Note what is **not** on this list any more: Windows Firewall, the Hyper-V firewall,
 port proxies. The VM is bridged onto the LAN and holds its own address, so its
 traffic never traverses the Windows network stack and nothing on Windows can block
-it. The VM's own firewall is Ubuntu's `ufw`, left inactive by the cloud image —
-check with `sudo ufw status` if you suspect otherwise. If a port is not answering,
-the service behind it is down.
+it.
+
+**And there is no firewall on the VM either, on purpose.** `ufw` is installed and
+inactive, and turning it on would not protect the published ports anyway: Docker
+inserts its own nftables rules ahead of ufw's, so a `ufw deny` on a published port
+blocks nothing while looking like it blocks something — which is worse than no
+firewall, because you stop checking. This is a home LAN behind NAT, the game
+servers are `sv_lan` or invite-only, and the panel has real authentication.
+
+So: if a port is not answering, the service behind it is down. There is no layer
+left that could be silently dropping it.
 
 ---
 
@@ -118,6 +141,12 @@ is no longer where the server lives.
 The VM holds 18 GB of the host's 32 GB and 12 of its 20 logical cores whenever it
 is running, whether or not a game server is up inside it. That is the budget you
 are playing around; power the VM off if you want the whole machine back.
+
+One thing that changed on the Windows side and has nothing to do with games:
+**WSL2 and Docker Desktop no longer work on this machine.** The Windows hypervisor
+is switched off so VirtualBox can use the CPU's virtualisation directly, and both
+of those depend on it. It is reversible with one `bcdedit` command and a reboot —
+see [DECISIONS.md](DECISIONS.md).
 
 ---
 

@@ -9,8 +9,21 @@ Java 21, roughly 485 mods, pinned to one exact CurseForge release.
 | Pinned version | `8.0` — CurseForge file `8649077` |
 | Loader | NeoForge `21.1.247` |
 | Address | `192.168.0.115:25565` |
+| RCON | `25575`, LAN only |
 | Slots | 8 |
 | Server heap | 10 GB (11 GB container) |
+| Control UI | `192.168.0.115:8093` — **not built yet**, see below |
+
+> **Nobody has actually played on it.** The server installs, boots, loads the
+> world, answers RCON and accepts a TCP connection on 25565 — those are what
+> `--validate` checks — and its world is in the nightly backup. But no real
+> player has ever connected. Everything in "Joining" below is derived from the
+> pack's requirements, not from having watched someone do it. Treat the first
+> session as a test rather than as a party.
+
+Start and stop it from the **LANtern landing page**, <http://192.168.0.115:8090>,
+or with `lantern use minecraft` on the VM. Starting it stops whatever else is
+running, and says so first.
 
 ---
 
@@ -108,23 +121,58 @@ docker compose exec -T panel php artisan tinker --execute="
 "
 ```
 
+### The control UI that is not here yet
+
+Port **8093** is reserved for a Minecraft control UI, being built separately. It
+is not deployed, and nothing in this repository serves it.
+
+The LANtern landing page already carries the link, gated on a **server-side TCP
+probe** of that port — so the button appears the moment something answers there
+and never before. Declaring the port ahead of the service is deliberate; the
+alternative is a link that silently goes nowhere.
+
+Until then, the console, files and mod management are in the Pelican panel, and
+power is on the landing page.
+
+---
+
+## Backups
+
+The world is in the nightly backup, and it is taken **without kicking anyone**:
+`backup-all.sh` sends `save-off` and `save-all flush` over RCON, waits, tars, and
+sends `save-on`. A tar taken mid-chunk-write restores a world with holes in it,
+which is worse than no backup because you find out weeks later.
+
+`logs/` and `crash-reports/` are excluded. Nothing else in the server directory is
+backed up — the 1.1 GB of mod jars is a re-download, the world is not.
+
+Details, including how to restore: [../vm/README.md](../vm/README.md).
+
 ---
 
 ## Memory, and why one server at a time
 
 Two budgets now, because the server lives in a VM.
 
-**Inside the VM** — 18 GB assigned, about 17 GB usable:
+**Inside the VM** — 18 GB assigned, about 17.6 GB usable:
 
 ```
  1.5 GB   Pelican, Wings, MariaDB, Redis, the control UI
 11.0 GB   Minecraft server (10 GB heap + 1 GB JVM overhead)
 ───────
-12.5 GB   of ~17, before Ubuntu's own footprint
+12.5 GB   of ~17.6, before Ubuntu's own footprint
 ```
 
 CS2 wants 8 GB of that same pool, so the two do not fit together. `lantern use
-minecraft` stops CS2 first for exactly this reason.
+minecraft` stops CS2 first for exactly this reason, and so does the Start button
+on the landing page.
+
+**There is now 4 GB of swap**, at `vm.swappiness=10`. It is not extra room —
+11 GB of the 17.6 is still committed to this server whether or not it is being
+used, and swap does not change that arithmetic. It exists so that the moment the
+box *nearly* does not fit becomes a stutter rather than the OOM killer ending the
+server mid-save. Sustained swap use means something is over-allocated; the landing
+page's swap gauge is where that becomes visible.
 
 **On the Windows host** — 32 GB, of which the VM takes its full 18 GB for as long
 as it is running, whether or not a game server is up inside it:
@@ -173,9 +221,14 @@ deliberately.
 1. `.github/workflows/pack-update.yml` checks CurseForge weekly
 2. A newer stable release opens a PR moving the pin, and posts to Discord
 3. You read the changelog — **specifically for removed mods**
-4. Back up the world
+4. Back up the world — `bash bootstrap/backup.sh minecraft` on the VM, and
+   `vm\export-vm-image.ps1 -StopVm` on Windows if you want a one-command undo for
+   the whole machine
 5. Merge, then reinstall on the host and re-validate
 6. Announce the new version so everyone updates Prism to match
+
+The nightly backup covers the world too, but "last night's" is the wrong
+granularity for a change you are making now. Take one first.
 
 To check by hand:
 

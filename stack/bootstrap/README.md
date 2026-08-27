@@ -27,7 +27,10 @@ Run them on the VM (`ssh lantern`), from `/opt/lantern/stack`.
 | `cs2-status.sh` | Install / runtime progress |
 | `rotate-rcon.php` | Rotate the RCON password |
 | `setup-weaponpaints-db.sh` | Scoped MySQL database for skins |
-| `backup.sh` | Snapshot a game's volumes (see the note under **Backups** below) |
+| `setup-minecraft.sh` | Build and import the Minecraft egg, create the server, validate it |
+| `setup-stardew.sh` | Bring the Stardew compose project up and validate it |
+| `mc-rcon.py` | One-shot RCON to the Minecraft server |
+| `backup.sh` | Snapshot **one** game to `/var/backups/lantern` (see **Backups** below) |
 
 ```bash
 cd /opt/lantern/stack
@@ -51,19 +54,28 @@ A wedged NIC on Windows therefore still takes LANtern off the LAN even though
 nothing about the stack has changed. Nothing on Windows routes, forwards or
 filters LANtern traffic any more — but the cable still belongs to Windows.
 
+The other live Windows scripts are in `vm/`, not here: `Start-LANtern.cmd`,
+`windows-setup.ps1`, `backup-pull.ps1`, `export-vm-image.ps1`, `reclaim-space.ps1`.
+See [../../vm/README.md](../../vm/README.md).
+
 ## Superseded by the move to the VM
 
 These exist in the tree and no longer have a purpose. They all solved problems
 created by running Docker inside WSL2, and a bridged VM does not have those
 problems. **Do not run them.**
 
+There is also nothing left for them to act on: both WSL distros were unregistered
+and their disks deleted, and WSL2 cannot start at all while the Windows hypervisor
+is off. They are kept as a record of what the WSL arrangement needed, not as a
+fallback.
+
 | Script | What it used to do | Why it is dead |
 |---|---|---|
 | `../lantern.cmd` | Forward `lantern` from PowerShell into WSL | `lantern` is on the VM's `PATH`; you reach it over ssh |
 | `publish-to-lan.ps1` | `netsh` portproxy from Windows into WSL's NAT | The VM has its own LAN address; nothing needs forwarding |
 | `open-lan-firewall.ps1` | Hyper-V firewall rules for the WSL vNIC | There is no WSL vNIC in the path any more |
-| `register-startup-task.ps1` | Register the logon sequencer | Nothing sequences at logon now |
-| `lantern-startup.ps1` | Logon sequencer: WSL → Docker Desktop → compose | The VM boots, systemd starts Docker, compose restarts itself |
+| `register-startup-task.ps1` | Register the logon sequencer | The task it registered, "LANtern startup", was unregistered by `vm/windows-setup.ps1`. Nothing sequences at logon now, and the VM is started by hand |
+| `lantern-startup.ps1` | Logon sequencer: WSL → Docker Desktop → compose | The VM boots, systemd starts Docker, compose restarts itself. Also unrunnable: WSL2 and Docker Desktop do not work on this machine with the hypervisor off |
 | `set-service-ip.ps1` | Pin `192.168.0.115` onto a Windows NIC | The VM holds `.115` statically via netplan; Windows is on DHCP |
 
 ## Gotchas these encode
@@ -95,19 +107,34 @@ docker compose exec -T panel php artisan tinker \
 
 ## Backups
 
-`backup.sh` still defaults its destination to `/mnt/e/lantern-backups`, which was
-the Windows E: drive seen through WSL. That path does not exist on the VM, so set
-the destination explicitly until the default is changed:
+**Settled, and automatic.** `vm/backup-all.sh` takes the complete set nightly and
+`vm/backup-pull.ps1` copies it to `D:\LANtern-Backups\data` on the Windows host —
+a different physical disk from the one the VM lives on. A Windows scheduled task
+named "LANtern backup" runs it at 03:00 and exits quietly when the VM is off. Full
+detail in [../../vm/README.md](../../vm/README.md).
+
+`backup.sh` here is the **single-game** version, kept because it is the quick
+thing to reach for before a risky change to one server:
 
 ```bash
-LANTERN_BACKUP_DIR=/var/backups/lantern bash bootstrap/backup.sh stardew
+bash bootstrap/backup.sh minecraft
+bash bootstrap/backup.sh stardew --keep 10
 ```
 
-Where backups should ultimately live is unsettled. The old arrangement wrote them
-to E: precisely so that one corrupted disk image could not take the farm and every
-backup of it at the same moment, and the same reasoning applies to the VM's virtual
-disk. A destination off that disk is worth arranging; nothing does it automatically
-today.
+It now defaults to `/var/backups/lantern`. It used to default to
+`/mnt/e/lantern-backups` — the Windows E: drive seen through WSL — which does not
+exist on the VM, so on the VM it had never once worked. `LANTERN_BACKUP_DIR`
+overrides it.
+
+What it writes stays **inside** the VM, which is deliberate for what it is for:
+undoing the change you are about to make. It is not a substitute for the nightly
+pull, because a backup that lives only on the machine it is backing up does not
+survive losing that machine.
+
+Minecraft is quiesced through RCON rather than stopped — `save-off` plus
+`save-all flush` — so nobody is kicked and the world is consistent. A tar taken
+mid-chunk-write restores a world with holes in it, which is worse than no backup
+because you find out weeks later.
 
 ---
 

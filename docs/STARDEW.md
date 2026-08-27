@@ -8,9 +8,10 @@ the Pelican stack.
 |---|---|
 | Game | Stardew Valley 1.6.15 |
 | Players | 8 (PC vanilla limit) |
+| Control UI | `http://192.168.0.115:8092` |
 | VNC console | `http://192.168.0.115:5800` |
 | HTTP API | `http://192.168.0.115:8091` |
-| Game port | `24642/udp` |
+| Game port | `24642/udp` (query `27030`) |
 | Mods | SMAPI, from `stardew/mods/` |
 
 ---
@@ -130,16 +131,58 @@ And a farm has nothing to do with knife rounds.
 ### Stardew control UI — `http://192.168.0.115:8092`
 
 Its own application, in `stardew-ui/`. Warm parchment rather than the CS2
-panel's dark tactical look, because they are different games.
+panel's dark tactical look, because they are different games. A **← LANtern**
+link in the header goes back to the landing page on `:8090`.
 
+- **Start farm / Stop farm** in the header
 - Invite code, with a copy button
 - Players and cabins, and a button to grant admin
 - **Mods**: everything installed, with a switch per mod, versions, authors,
   content-pack tags, and a warning when an enabled mod's dependency is missing
   or disabled
+- **The farm**: in-game date, time of day, weather, gold, farm type, cabin count,
+  farmhand count, clock speed
 - Time of day, render rate, reload world
 - A live screenshot of the farm
 - Restart the server, which is the only way a mod toggle takes effect
+
+**It is useful when the farm is down**, which is the point of the layout. With the
+server off you still get the mod list and a Start button, rather than one line of
+text telling you to go somewhere else. `sdvd-ui` is started with the game and
+deliberately **not** stopped with it, for the same reason: a management UI that
+disappears whenever the thing it manages is off is a management UI you cannot use
+for the one thing you most need it for.
+
+Every field on the farm panel is allowed to be absent. A farm still loading
+answers `/health` long before it can answer `/status`, and a partial dashboard is
+more useful than one error message — so missing fields are named
+("Not reported by the server: stats, settings.") rather than rendered as a dash
+you cannot tell apart from a zero.
+
+#### Start and Stop forward to the LANtern service
+
+They are **not** implemented here. This container already holds the Docker socket
+and could start and stop the Stardew containers in about ten lines. It does not,
+on purpose.
+
+Only one game server may run at a time, and that rule has to live in exactly one
+place. Implemented in both control UIs it would be two copies of a safety rule
+that must not disagree — and the way they would disagree is that one of them
+starts Stardew without stopping CS2 and the kernel kills something mid-save. So
+`stardew-ui/app/lantern.py` forwards to the control service on `:8090` and passes
+its answers back.
+
+That includes the **409 meaning "this would stop CS2, confirm first"**, whose
+structured body is passed through intact, so this UI shows the same confirmation
+the landing page does rather than inventing a second dialect.
+
+Forwarding server-side rather than calling `:8090` from the browser also avoids
+CORS: the two UIs are on different ports, so a fetch from this page would be
+cross-origin and would need the other service to opt in. It has no reason to.
+
+If the control service is unreachable, the power buttons go away and the rest of
+the page still works — this panel appearing is not worth breaking the farm
+dashboard for.
 
 ### VNC console — `http://192.168.0.115:5800`
 
@@ -294,8 +337,9 @@ lantern status
 ```
 
 One game server at a time is enforced, not just suggested. Everything shares the
-VM's ~17 GB usable. Stardew is cheap compared to Minecraft — 3 GB against
-11.5 GB — but the rule is uniform.
+VM's ~17.6 GB usable. Stardew is cheap compared to Minecraft — 3 GB against
+11 GB — but the rule is uniform. The landing page on `:8090` enforces the same
+thing with buttons.
 
 ```bash
 cd /opt/lantern/stardew
@@ -311,6 +355,7 @@ docker compose --profile discord up -d   # optional Discord bot
 | HTTP API | 8080 | **8091** | Wings owns 8080 |
 | VNC | 5800 | 5800 | |
 | Game | 24642 | 24642 | |
+| Control UI | — | **8092** | Upstream has no such service. 8090 is the LANtern landing page and CS2 UI; 8093 is reserved for Minecraft's |
 
 `setup-stardew.sh` fails the preflight if either reverts to the upstream value.
 
@@ -348,21 +393,32 @@ Saves live in the `lantern-stardew_saves` Docker volume, which is inside the VM'
 virtual disk. So the point of a backup is to get a copy **off that disk** — one
 corrupted disk image should not take the farm and every backup of it at once.
 
-`backup.sh` still defaults its destination to `/mnt/e/lantern-backups`, which was
-the Windows E: drive seen through WSL and does not exist on the VM. Give it a
-destination explicitly:
+**That now happens nightly, and no longer needs you.** A Windows scheduled task,
+"LANtern backup", runs at 03:00, takes a fresh backup on the VM and copies it to
+`D:\LANtern-Backups\data` — the Toshiba HDD, a different physical disk from the
+SSD the VM lives on. The Stardew saves volume and the `config` volume beside it
+(the SMAPI and game configuration) are both in every set. It exits quietly if the
+VM is off.
 
-```bash
-LANTERN_BACKUP_DIR=/var/backups/lantern bash bootstrap/backup.sh stardew
-```
+This did not work before. `backup.sh` used to default to `/mnt/e/lantern-backups`,
+which was the Windows E: drive seen through WSL and does not exist on the VM, so
+running it there had never produced anything.
 
-That writes to the VM's own disk, which satisfies "a backup exists" and not "the
-backup survives losing the VM". Copying the result back to Windows afterwards is
-the part that is currently manual:
+To take one right now, from Windows:
 
 ```powershell
-scp lantern:/var/backups/lantern/stardew-*.tar.zst E:\lantern-backups\
+powershell -ExecutionPolicy Bypass -File vm\backup-pull.ps1
 ```
+
+Or just the saves, on the VM, before something risky like a mod change:
+
+```bash
+bash bootstrap/backup.sh stardew
+```
+
+which now writes to `/var/backups/lantern` and stays on the VM — good enough for
+"undo the thing I am about to do", not for "the VM died". See
+[../vm/README.md](../vm/README.md).
 
 ---
 

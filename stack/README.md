@@ -112,9 +112,14 @@ docker exec stack-ui-1 ls /volumes   # must list the server UUID, not nothing
    expected state on a fresh stack, not a fault.
 
 4. **Autostart** — nothing to configure inside the VM. The compose services are
-   `restart: unless-stopped`, so the panel returns whenever the VM boots while
-   game servers stay off until you start them. Starting the VM itself is a
-   `VBoxManage startvm lantern --type headless` on Windows.
+   `restart: unless-stopped`, so the panel returns whenever the VM boots. Wings
+   also restores whichever game server was running when the VM went down, so the
+   box does not necessarily come up idle.
+
+   Starting the **VM** is a manual act on Windows: the Desktop shortcut
+   **"Start LANtern"**, or `VBoxManage startvm lantern --type headless`. Nothing
+   does it automatically — the old logon task was unregistered when the stack left
+   WSL and was deliberately not replaced.
 
 5. **Host services** — once Wings has run at least once:
 
@@ -122,12 +127,25 @@ docker exec stack-ui-1 ls /volumes   # must list the server UUID, not nothing
    bash ../vm/install-vm-services.sh
    ```
 
-   This installs `lantern-dbnet.timer` and symlinks `lantern` onto `PATH`. The
-   timer re-attaches MariaDB to Wings' `pelican_nw` bridge every 60 seconds.
+   This installs `lantern-dbnet.timer`, creates a 4 GB swap file at
+   `vm.swappiness=10`, and symlinks `lantern` onto `PATH`. The timer re-attaches
+   MariaDB to Wings' `pelican_nw` bridge every 60 seconds.
    It cannot be a compose dependency: Wings creates that network itself, and only
    once it starts, so an `external: true` reference fails on a machine where no
    game server has ever run. Without it, WeaponPaints inside the CS2 container
    cannot resolve `database` and every loadout silently reads as empty.
+
+   The swap is a shock absorber, not headroom — 11 GB of the VM's ~17.6 is
+   committed to Minecraft when it runs, and without swap a spike is the OOM killer
+   ending something mid-save rather than a stutter. See
+   [../vm/README.md](../vm/README.md).
+
+6. **On Windows**, in an elevated PowerShell — writes the Desktop shortcut and
+   registers the nightly backup to `D:`:
+
+   ```powershell
+   vm\windows-setup.ps1
+   ```
 
 ## Deltas from upstream
 
@@ -146,22 +164,39 @@ Taken from `pelican/panel` `compose-full-stack.yml` and `pelican/wings`
 ## Ports
 
 Every one of these is reachable directly from the LAN — the VM is bridged, so
-nothing on Windows forwards, proxies or filters them.
+nothing on Windows forwards, proxies or filters them. Nothing on the VM does
+either: **there is no firewall on it, deliberately.** `ufw` cannot protect
+Docker-published ports, because Docker inserts its own nftables rules ahead of
+ufw's — a `ufw deny` on a published port would be the appearance of protection
+without the fact of it, which is worse than none. This is a home LAN behind NAT
+and the panel has real authentication.
 
 | Port | Service |
 |---|---|
 | 80 | Panel web UI |
-| 8080 | Wings API (panel ↔ wings) |
 | 2022 | SFTP for the panel file manager |
-| 27015/udp + tcp | CS2 (once the server exists) |
+| 5800 | Stardew web VNC (password-protected) |
+| 8080 | Wings API (panel ↔ wings) |
+| 8090 | LANtern landing page (`/`) and CS2 control UI (`/cs2`) |
+| 8091 | Stardew HTTP API |
+| 8092 | Stardew control UI |
+| 8093 | **Reserved** for the Minecraft control UI — nothing listens there yet |
+| 24642/udp | Stardew game |
+| 25565 · 25575 | Minecraft · its RCON |
+| 27015/udp + tcp | CS2 |
 | 27020/udp | CSTV |
-| 25565 | Minecraft |
+| 27030/udp | Stardew query (moved off 27015, which CS2 owns) |
+
+The Stardew ports belong to a separate compose project in `../stardew`, not to
+this one. They are listed here because "what is on this box" is the question
+people actually have.
 
 ---
 
 ## Related
 
 - [../docs/USING.md](../docs/USING.md) — day-to-day operation
-- [../docs/CONTROL-UI.md](../docs/CONTROL-UI.md) — the CS2 control UI on :8090
+- [../docs/CONTROL-UI.md](../docs/CONTROL-UI.md) — the landing page and the CS2 control UI on :8090
 - [../docs/CONNECTING.md](../docs/CONNECTING.md) — how players join
+- [../vm/README.md](../vm/README.md) — the VM under all of this, and the backups
 - [bootstrap/README.md](bootstrap/README.md) — the setup and repair scripts

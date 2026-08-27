@@ -152,13 +152,22 @@ static address on the client, plus a reservation the router honours, is one
 arrangement — a reservation racing a live dynamic lease for the same MAC is a
 different and broken one.
 
-**One thing to check.** The `.115` reservation names the *Windows* NIC's MAC
-(`A0-36-BC-BA-5A-C3`). The VM's bridged adapter has a different one. The VM holds
-the address statically so it needs no lease, but the DHCP pool is
-`192.168.0.2-253` with no exclusions, so the router can still hand `.115` to some
-other device and cause a conflict. Whether the reservation has been re-pointed at
-the VM's MAC is not recorded here — `dhcp_reservations` will tell you, and the
-web UI is where you change it.
+**Done, and worth recording.** The `.115` reservation used to name the *Windows*
+NIC's MAC (`A0-36-BC-BA-5A-C3`). It now names the VM's bridged adapter,
+**`08:00:27:F2:63:BA`**, and the old reservation for the Windows NIC is gone.
+
+That is not redundant with the static address. The VM holds `.115` via netplan and
+needs no lease — but the DHCP pool is `192.168.0.2-253` with no exclusions, so
+without a reservation the router could hand `.115` to some other device and
+produce a conflict in which both hosts half-work. The reservation is there to keep
+the address out of the pool, not to assign it.
+
+`dhcp_reservations` is how you confirm it; the web UI is where you change it.
+
+> **Check this again after importing a VM from an `.ova`.** VirtualBox gives the
+> imported machine a fresh MAC, so the reservation stops matching anything. Either
+> re-point it, or set the MAC back with
+> `VBoxManage modifyvm lantern --macaddress1 080027F263BA`.
 
 ### Reservations cannot be deleted through this API
 

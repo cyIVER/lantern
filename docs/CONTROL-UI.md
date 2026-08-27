@@ -1,15 +1,91 @@
-# CS2 Control UI
+# The control UIs
 
-**<http://192.168.0.115:8090>** — no login. A CS2-styled panel for the things you
-actually touch mid-party: players, maps, mode, match control, and a console that
-returns output.
+One FastAPI service on `:8090` serves two pages, and a second application on
+`:8092` serves the farm.
 
-Pelican is still there for everything else — files, backups, schedules, subusers,
-creating new servers. This does not replace it; it sits on top of it.
+| | | |
+|---|---|---|
+| **LANtern landing page** | <http://192.168.0.115:8090/> | Which game is running, buttons to switch, and the host dashboard |
+| **CS2 control** | <http://192.168.0.115:8090/cs2> | Players, maps, mode, match control, loadouts, RCON console |
+| **Stardew control** | <http://192.168.0.115:8092> | Its own application in `stardew-ui/` — see [STARDEW.md](STARDEW.md) |
+| **Minecraft control** | `:8093` | Reserved, being built separately. Not deployed |
+
+No login on any of them.
+
+**The CS2 UI moved.** It used to be served at `:8090` itself; the landing page
+took the root and the CS2 UI is at `/cs2`. Nothing else moved — `/api/...`,
+`/static/...` and the whole CS2 backend are on the same origin at the same paths,
+so the move cost the CS2 page nothing.
+
+Every game UI carries a **← LANtern** link back to the landing page. The landing
+page links out to each game UI rather than embedding it: they are separate
+applications with their own themes, and wrapping them would mean one owning the
+others' chrome for no gain.
+
+Pelican is still there for everything the panel does better — files, backups,
+schedules, subusers, creating servers. None of this replaces it; it sits on top.
 
 ---
 
-## Tabs
+## The landing page
+
+Two blocks.
+
+**Game servers.** One card per game, showing state, a Start or Stop button, the
+connect string when it is up, and a link to that game's own UI.
+
+Only one game runs at a time — CS2 is allocated 8 GB and Minecraft 11 GB on a box
+with about 17.6 GB usable, so two at once means the kernel OOM killer ends one of
+them mid-save. That rule lives in the control service, not in the page. Starting a
+game while another is running gets an **HTTP 409** whose body names what would be
+stopped and who would be disconnected; the page shows that in a confirmation
+dialog and only then re-sends with `confirm=true`.
+
+Not `window.confirm()`, deliberately: the message has to name the server being
+stopped and say what happens to the people on it, and a browser dialog cannot be
+made to look as consequential as it is.
+
+The switch stops the others, **waits for them to actually be down**, and only then
+starts the new one — a start issued while the previous server is still releasing
+its memory is how the box gets overcommitted. If something refuses to stop within
+90 seconds it refuses to start anything, rather than proceeding into the state the
+whole rule exists to prevent.
+
+**Host.** CPU (a sampled rate, with a sparkline), memory, disk, load per core,
+swap, uptime, and the container list.
+
+A few of those numbers are more careful than they look:
+
+- **CPU is a rate, not a reading.** `/proc/stat` gives cumulative jiffies since
+  boot, so one read says nothing about now. The first poll after a restart has
+  nothing to compare against and returns `null` rather than a made-up zero; the
+  page shows a dash until the second poll.
+- **Load is shown per core.** 4.0 is idle on twelve cores and on fire on two.
+- **Memory uses `MemAvailable`, not `MemFree`.** Free memory excludes cache the
+  kernel hands back on demand and reads alarmingly low on a perfectly healthy box.
+- **Disk is measured through the `/volumes` bind**, which is `/var/lib/pelican` on
+  the host — the filesystem game servers actually fill up. The container's own `/`
+  is the image and would be useless.
+- **Network is deliberately absent.** Network namespaces are per-container, so
+  `/proc/net/dev` here describes a compose bridge rather than the LAN. A plausible
+  wrong number is worse than no number.
+- **Swap matters now.** The VM has 4 GB of it at `swappiness=10`, and any sustained
+  use means something is over-allocated. That is what the gauge is for; see
+  [DECISIONS.md](DECISIONS.md).
+
+The container list trades Wings' UUID container names for the panel's names where
+it knows one, and sorts non-running containers first — the failure the list exists
+to make visible is the one restarting in a loop.
+
+The Minecraft UI link is gated on a **server-side TCP probe** of `:8093`. It has to
+be server-side: a cross-origin probe from the page cannot tell "nothing listening"
+from "listening, but that is not an image", so it would report every port as up.
+A TCP connect knows the difference, which is why the link can sit in the code
+before the UI exists without ever offering a dead button.
+
+---
+
+## CS2 tabs
 
 | Tab | What it does |
 |---|---|
@@ -43,6 +119,32 @@ out of sync — change the mode here and the panel's Startup tab reflects it.
 
 Polling, not websockets: 4 seconds, imperceptible on a LAN, and it avoids
 reconnect and token-refresh state for no real benefit.
+
+Switching games needs a third path again, because the three games are not the same
+kind of thing. CS2 and Minecraft are Pelican servers, so Wings owns their
+containers and they are driven through the panel's client API — their UUIDs looked
+up by name at runtime rather than configured, because a UUID in a `.env` is one
+more thing to get wrong after a rebuild and the panel already knows the answer.
+Stardew is not a Pelican server at all; it is a separate compose project, driven
+straight through the Docker socket. That is why the `ui` container has the socket
+mounted, and why Stardew reports as unavailable rather than breaking the page if
+it ever is not.
+
+`sdvd-ui` — the Stardew control UI — is started with the farm and **not** stopped
+with it. A management UI that disappears whenever the thing it manages is off is a
+management UI you cannot use for the one thing you most need it for.
+
+## Pages are served `no-cache`
+
+Both UIs set `Cache-Control: no-cache` on their pages and static files, so a
+deploy is visible on the next reload.
+
+It does not mean "do not cache" — it means revalidate before use. The ETag still
+works, so an unchanged file is a 304 with no body, which on a LAN is free.
+
+This is here because it cost real time twice: a fix was deployed, verified as
+being served correctly by the server, and was still absent in the browser. That
+sends you looking for a bug in the deploy that is not there.
 
 ## Things learned building it
 
@@ -207,8 +309,32 @@ Useful if you want to script against it or add a tab.
 | `DELETE` | `/api/presets/{steamid64}/{slot}` | delete a slot |
 | `GET` | `/api/watcher` | console-stream health |
 
+Two more belong to the landing page rather than to CS2, and act on all three games:
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/servers` | every game's state, plus `running` — and `ui_up` where a game has its own UI |
+| `POST` | `/api/servers/{game}/start` | `{confirm}` — **409 unless `confirm` is true** when something else is running |
+| `POST` | `/api/servers/{game}/stop` | stop one game |
+| `GET` | `/api/host` | cpu / memory / disk / load / swap / uptime / containers |
+
+`{game}` is `cs2`, `minecraft` or `stardew`. The 409 body is structured, not a
+string — it carries `would_stop`, `would_stop_labels` and a `message` written for a
+human:
+
+```json
+{"needs_confirm": true, "game": "stardew", "label": "Stardew Valley",
+ "would_stop": ["cs2"], "would_stop_labels": ["Counter-Strike 2"],
+ "message": "Starting Stardew Valley will shut down Counter-Strike 2. Anyone connected will be disconnected."}
+```
+
+Anything calling this must show that message and re-send with `confirm=true`,
+rather than setting `confirm` on the first request. That is the entire safety
+interlock; a client that always confirms has removed it.
+
 ```bash
 curl -s http://192.168.0.115:8090/api/players | python -m json.tool
+curl -s http://192.168.0.115:8090/api/servers | python -m json.tool
 curl -s -X POST http://192.168.0.115:8090/api/command \
      -H 'Content-Type: application/json' -d '{"command":"status"}'
 ```
@@ -221,14 +347,29 @@ No build step — plain HTML, CSS and JS.
 
 ```
 ui/
-  app/main.py            endpoints, Pelican client, status_json parsing
+  app/main.py            endpoints, Pelican client, status_json parsing, routing
   app/rcon.py            async Source RCON (CS2 quirks documented inline)
-  static/index.html      markup
+  app/servers.py         the one-server-at-a-time rule, for all three games
+  app/host.py            /proc and Docker readings for the host dashboard
+  app/loadout.py         WeaponPaints tables
+  app/presets.py         the nine preset slots
+  app/watcher.py         the Wings console stream
+  static/shell.html      the LANtern landing page
+  static/shell.css       its look
+  static/shell.js        its polling, cards and confirmation dialog
+  static/index.html      the CS2 UI
   static/style.css       the CS2 look; system fonts only, no CDN
   static/app.js          polling, rendering, actions
   static/maps/*.svg      extracted icons (gitignored)
   extract-map-icons.py   the extractor
 ```
+
+Adding a game UI to the landing page is one entry in `UIS` in `shell.js` — a
+label and a URL builder. The card, the link and the state row are all driven from
+`/api/servers` plus that map. A game with no entry gets a panel link instead.
+
+Adding a *game* is one entry in `GAMES` in `app/servers.py`, saying whether it is
+Pelican-managed or Docker-managed and, optionally, what port its UI answers on.
 
 On the VM:
 
@@ -246,9 +387,19 @@ docker compose cp panel:/tmp/lantern-ui.env ../ui/.env
 
 ## Locking it down
 
-Open by design — see [CONNECTING.md](CONNECTING.md). If you want it gated, the
-smallest change is a reverse proxy with basic auth in front of `:8090`, or bind
-the published port to `127.0.0.1` in `stack/compose.yml`.
+Open by design — see [CONNECTING.md](CONNECTING.md). Note what that now includes:
+anyone on the LAN can **stop the game other people are playing** from the landing
+page. It asks first and names what it will shut down, but it does not ask who you
+are.
+
+There is no firewall on the VM either, and that is also deliberate — `ufw` cannot
+protect Docker-published ports, because Docker inserts its own nftables rules
+ahead of ufw's. See [CONNECTING.md](CONNECTING.md).
+
+If you want it gated, the smallest change is a reverse proxy with basic auth in
+front of `:8090`, or bind the published port to `127.0.0.1` in
+`stack/compose.yml`. Note that gating `:8090` also gates the Stardew UI's power
+buttons, which forward to it.
 
 Note what `127.0.0.1` means now: the VM's loopback, reachable only from a shell on
 the VM. It is no longer "the machine you are sitting at" — that would want an ssh

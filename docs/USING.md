@@ -2,13 +2,23 @@
 
 | | |
 |---|---|
-| 🎮 **CS2 Control** | **<http://192.168.0.115:8090>** — no login. Day-to-day driving. |
+| 🏮 **LANtern** | **<http://192.168.0.115:8090>** — no login. Which game is up, switch games, host health. |
+| 🎮 **CS2 Control** | **<http://192.168.0.115:8090/cs2>** — no login. Day-to-day driving. |
 | 🛠 **Pelican Panel** | **<http://192.168.0.115>** — `iveri@lantern.lan`. Files, backups, schedules, subusers. |
 | 🔫 **Play** | `connect 192.168.0.115:27015` |
 
 **Use the control UI for anything mid-party.** Pelican is for the deeper
 plumbing. Both drive the same server and stay in sync — see
 [CONTROL-UI.md](CONTROL-UI.md) for how that works.
+
+The CS2 UI moved from `:8090` to `:8090/cs2` when the LANtern landing page took
+the root. Both pages carry links to each other, so the old bookmark costs you one
+click.
+
+**Switching games is a landing-page job.** Only one game server runs at a time; the
+page will stop what is running and start what you asked for, after telling you
+exactly what it is about to shut down. `lantern use <game>` on the VM does the same
+thing from a shell.
 
 Friends joining? → [CONNECTING.md](CONNECTING.md)
 
@@ -166,11 +176,16 @@ needs no database of its own.
   Startup variables, or put permanent overrides in a separate cfg.
 - **Changing Mode needs a restart.** Map changes do not, if you use
   `changelevel` or the Maps tab.
-- **After a Windows reboot** nothing is running until you start the VM:
-  `VBoxManage startvm lantern --type headless` from any Windows shell. Once it
-  boots, the panel stack comes back on its own (`restart: unless-stopped`), but
-  **game servers stay off by design** — start them from either UI.
-- **After a VM reboot** the panel returns by itself; game servers still do not.
+- **After a Windows reboot** nothing is running until you start the VM. Use the
+  Desktop shortcut **"Start LANtern"**, or `VBoxManage startvm lantern --type
+  headless` from any Windows shell. Nothing does it automatically.
+- **After the VM boots**, the panel stack comes back on its own
+  (`restart: unless-stopped`) — and so does **whichever game server was running
+  when the VM went down**, because Wings restores it. So the box does not
+  necessarily come up idle. Look at the landing page before assuming which game,
+  if any, is holding the memory.
+- **A backup runs at 03:00** from the Windows side and pulls to `D:`. It exits
+  quietly if the VM is off, which is the usual case. See [vm/README.md](../vm/README.md).
 - **Never drop a plugin's full archive into `addons/`.** Some ship their own
   Metamod, CounterStrikeSharp runtime, or the core `gamedata.json`, and will
   overwrite the platform with a stale copy. The staging normaliser strips these,

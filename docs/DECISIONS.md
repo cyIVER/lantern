@@ -6,7 +6,10 @@ Entries are kept as they were written. Where a later decision overturned an
 earlier one, the earlier one is marked **superseded** and left in place — the
 reasoning that led to it is the part worth keeping, and deleting it would make
 the same ground look unexplored next time. The most recent entry is
-[2026-08-26: a bridged VM replaces Docker-inside-WSL2](#2026-08-26--a-bridged-vm-replaces-docker-inside-wsl2).
+[2026-08-26: the hypervisor trade, taken](#2026-08-26--the-hypervisor-trade-taken),
+written later the same day as
+[2026-08-26: a bridged VM replaces Docker-inside-WSL2](#2026-08-26--a-bridged-vm-replaces-docker-inside-wsl2)
+and overturning part of it.
 
 ## Platform
 
@@ -346,6 +349,14 @@ Nobody has looked.
 
 ## What it cost
 
+> **Superseded later on 2026-08-26 — the trade below WAS taken.** The hypervisor
+> is now off, VirtualBox runs on native VT-x, and AVX2 is present in the guest.
+> The cost described here no longer applies; the cost of the fix does. See
+> [2026-08-26: the hypervisor trade, taken](#2026-08-26--the-hypervisor-trade-taken)
+> for the measurements. Kept because the reasoning is what made the decision
+> reversible, and because the numbers below are the "before" half of the
+> comparison.
+
 **Roughly 2x single-threaded CPU performance, and no AVX2 in the guest.**
 
 VirtualBox cannot use hardware virtualisation directly here, because WSL2 keeps
@@ -361,10 +372,11 @@ bcdedit /set hypervisorlaunchtype off
 ```
 
 which gives VirtualBox the hardware directly — and **disables WSL2 and Docker
-Desktop** on that machine, since both depend on the same hypervisor. That trade
+Desktop** on that machine, since both depend on the same hypervisor. ~~That trade
 has not been taken: the machine is also a workstation, and a CS2 server for twelve
-players is not CPU-bound in a way that 2x single-threaded matters. Revisit it if
-Minecraft tick times or CS2 server frames say otherwise.
+players is not CPU-bound in a way that 2x single-threaded matters.~~ *(It was
+taken, hours later. The reasoning that it was not worth it turned out to rest on
+an unmeasured guess about what the nesting actually cost — see the next entry.)*
 
 ## Other consequences
 
@@ -398,12 +410,15 @@ did not survive the move on its own.
 rides the host's physical adapter. `stack/bootstrap/fix-ethernet.ps1` remains
 live for that reason and only that reason.
 
-**The `.115` DHCP reservation is bound to the old MAC.** The reservation on the
-router names the Windows NIC's MAC (`A0-36-BC-BA-5A-C3`); the VM's bridged adapter
+~~**The `.115` DHCP reservation is bound to the old MAC.**~~ *(Resolved later the
+same day: the reservation now names the VM's bridged MAC `08:00:27:F2:63:BA`, and
+the old one for the Windows NIC is gone.)* The reservation on the
+router named the Windows NIC's MAC (`A0-36-BC-BA-5A-C3`); the VM's bridged adapter
 has a different one. The VM holds the address statically so it does not need a
-lease — but the router's pool is `192.168.0.2-253` with no exclusions, so it can
-still hand `.115` to some other device and cause a conflict. Whether the
-reservation has been re-pointed at the VM's MAC is not recorded here; check it.
+lease — but the router's pool is `192.168.0.2-253` with no exclusions, so it could
+still hand `.115` to some other device and cause a conflict. That is why the
+re-point mattered, and why it matters again after any OVA import, which gives the
+imported VM a new MAC.
 
 ## Scripts this retired
 
@@ -414,3 +429,193 @@ reservation has been re-pointed at the VM's MAC is not recorded here; check it.
 that anyone who finds one in the tree learns why not to run it.
 
 The build, migration and cutover for all of this live in `vm/`.
+
+---
+
+# 2026-08-26 — the hypervisor trade, taken
+
+The entry above closed with "that trade has not been taken." It was taken, hours
+later, and it should have been taken first. The Windows hypervisor is now
+**off**:
+
+```powershell
+bcdedit /set hypervisorlaunchtype off     # then reboot
+```
+
+VirtualBox runs on native VT-x. **WSL2 and Docker Desktop no longer work on this
+machine at all**, which is the entire cost and was the entire hesitation.
+
+## Why the earlier reasoning was wrong
+
+Not because the priorities changed. Because the cost of the nesting had been
+estimated rather than measured, and "roughly 2x single-threaded" turned out to
+undersell it — the penalty was not confined to single-threaded integer work,
+which is the one place it would have been tolerable.
+
+Same benchmarks, same guest, before and after the reboot:
+
+| Measurement | Nested (WHP) | Native VT-x |
+|---|---|---|
+| Single-threaded integer compute | 0.97 s | **0.56 s** |
+| AES-256-GCM, 8 KB block | 2,830 MB/s | **5,446 MB/s** |
+| Direct disk write | 475 MB/s | **3.2 GB/s** |
+| AVX2 in the guest | absent | **present** |
+
+AVX2 is the one that settles it. It is not a percentage; it is a capability that
+either exists or does not, and its absence is invisible until something needs it
+and takes a slow path or refuses to run. Crypto more than doubling is the same
+story with a number attached — the guest was emulating what the CPU can do
+directly.
+
+VirtualBox's own log confirms it is no longer nested:
+
+```
+UseNEMInstead = 0
+Using VT-x implementation 3.0
+```
+
+with nested paging and unrestricted guest execution both enabled. That is what to
+check after any future change here; a VM that boots proves nothing either way.
+
+## What it costs, stated plainly
+
+**WSL2 and Docker Desktop are dead on this machine while the hypervisor is off.**
+Not degraded — they cannot start. Anything on the workstation that depended on
+either is gone until the setting is reversed:
+
+```powershell
+bcdedit /set hypervisorlaunchtype auto    # then reboot
+```
+
+That is a real reversal, not a theoretical one: one command and a reboot, with no
+data involved. Which is what makes the trade takeable at all.
+
+`vm/windows-setup.ps1 -DisableHypervisor` is what applied it. It refuses to
+proceed while Memory Integrity (Core Isolation) is enabled, because that holds
+VT-x regardless and the result would be a reboot that changed nothing.
+
+## 449 GB reclaimed
+
+With WSL2 no longer serving anything, the disks it kept were dead weight. Both
+distros were unregistered and their `.vhdx` files removed:
+
+| | |
+|---|---|
+| `E:\DockerData` | 365 GB — Docker Desktop's `ext4.vhdx` |
+| `E:\WSL` | 84 GB — the Ubuntu distro |
+
+E: went from **220.9 GB free to 669.6 GB free**. Both sat on the Samsung SSD,
+which is also the disk the VM runs from — so this is the fastest storage in the
+machine handed back to the thing still using it.
+
+`vm/reclaim-space.ps1` did it, and it refuses to run until it can see the backups
+of the two Docker volumes and the WSL home directory that existed nowhere else.
+That check is not ceremony: this was the point of no return, and everything
+before it was reversible.
+
+**There is no WSL fallback stack any more.** The VM is the only copy.
+
+## Backups, which did not previously exist
+
+Worth being blunt about the prior state. `stack/bootstrap/backup.sh` defaulted to
+`/mnt/e/lantern-backups`, a path that only means anything under WSL. On the VM it
+does not exist, so the script had never once worked there. The stack had no
+backups at all, and that survived the migration unnoticed.
+
+Two scripts now, answering two different questions.
+
+**"Can I get the data back?"** — `vm/backup-all.sh`, run nightly by
+`vm/backup-pull.ps1` from a Windows scheduled task named **"LANtern backup"** at
+03:00. Roughly 165 MB covering the whole irreplaceable set: the panel database
+including `cs2_weaponpaints`, the `/etc/pelican` node token, the Minecraft world,
+CS2's cfg and addons, Stardew's saves and config, and the gitignored `.env`
+files. CS2's ~67 GB of game content is deliberately excluded — SteamCMD fetches
+it again on demand, and no backup should carry what a download can replace.
+
+Three decisions inside it are the ones worth keeping:
+
+- **The database is dumped, not copied.** A tar of a live MariaDB datadir is a
+  copy of a database mid-write, and it restores to something that looks fine
+  until it does not. The dump is also two orders of magnitude smaller than the
+  228 MB datadir.
+- **Minecraft is quiesced over RCON, not stopped.** `save-off` plus
+  `save-all flush` gets a consistent world without kicking anyone. A tar taken
+  mid-chunk-write restores a world with holes in it, which is worse than no
+  backup because you find out weeks later.
+- **The result is pulled to D: as plain files.** Not left on the VM, not written
+  into a second virtual disk. The failure this insures against is losing the VM,
+  and a backup you can only read by booting the thing that died is not a backup.
+  D: is the Toshiba HDD; the VM lives on the Samsung SSD. Different physical
+  disk, which is the entire point.
+
+The scheduled task exits quietly and successfully when the VM is off. That is the
+normal case rather than an error worth alerting about, because the VM is started
+by hand.
+
+**"How long until we are playing again?"** — `vm/export-vm-image.ps1`, run by
+hand before anything risky. The data backup covers what cannot be re-downloaded;
+this covers time to recovery. Restoring from data alone means rebuilding the VM,
+reinstalling Docker, re-adopting the Wings node and pulling CS2 again — an
+evening. Importing an OVA is one command and a wait. It refuses to export a
+running VM, because a copy of a running machine's disk imports to something that
+boots into fsck, if it boots.
+
+`stack/bootstrap/backup.sh` remains as the single-game version, now defaulting to
+`/var/backups/lantern`, which exists.
+
+## 4 GB of swap
+
+`vm/install-vm-services.sh` creates a 4 GB swap file at `vm.swappiness=10`.
+
+The reasoning is arithmetic. The VM has about 17.6 GB usable and Minecraft is
+allocated 11 GB of it. Without swap, a transient spike does not degrade — the
+kernel OOM killer picks a process and ends it, with no warning and typically
+mid-save. Swap turns that into a stutter.
+
+It also turns it into a *signal*. The landing page's swap gauge shows the first
+percent of use, so "you are over-allocated" becomes something visible in advance
+rather than something a friend reports after their world is gone.
+
+`swappiness` is 10 rather than the default 60 on purpose: this is a shock
+absorber, not tiered memory. At 60 the kernel pages out idle game-server heap
+during ordinary play and you feel it.
+
+Swap does not soften the one-server-at-a-time rule. 4 GB of disk does not make
+CS2 and Minecraft fit; it makes the moment they nearly do not fit survivable.
+
+## Windows starts nothing
+
+`vm/windows-setup.ps1` unregistered the old "LANtern startup" scheduled task and
+removed Docker Desktop from the Run key. Nothing replaced them. The VM is started
+from a Desktop shortcut, **"Start LANtern"**, which runs `vm\Start-LANtern.cmd`
+and therefore `VBoxManage startvm lantern --type headless`.
+
+Manual on purpose. The VM holds 18 GB and 12 vCPUs for as long as it runs,
+whether or not a game server is up inside it, and this machine is also a
+workstation. An autostart would take that budget on every boot, including the
+ones that have nothing to do with LANtern.
+
+One consequence that is easy to get wrong: **Wings restores whichever game server
+was running when the VM went down.** So "nothing autostarts" is true of the VM
+and not of the game inside it. Check the landing page rather than assuming the
+box came up idle.
+
+## The landing page
+
+`http://192.168.0.115:8090/` is now the LANtern landing page — which game is
+running, and where each game's own UI lives — and the CS2 control UI moved to
+`/cs2` beneath it. Both game UIs carry a link back.
+
+It is a landing page rather than a shell that embeds the others. The game UIs are
+separate applications with their own themes and their own audiences; wrapping
+them would mean one of them owning the others' chrome for no gain. Linking out
+costs a page load on a LAN.
+
+The one-server-at-a-time rule lives in **one** place — the control service behind
+that page — and every other UI forwards to it. Starting a game while another runs
+returns HTTP 409 with a structured body naming what would be stopped; the caller
+shows that to a human and only then re-sends with `confirm=true`. The Stardew UI
+proxies its power buttons to the same endpoint rather than driving Docker itself,
+even though it holds the socket and could. A safety rule implemented twice is a
+safety rule that will eventually disagree with itself, and the way it would
+disagree is by starting Stardew without stopping CS2.

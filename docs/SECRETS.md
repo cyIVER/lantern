@@ -7,13 +7,30 @@ lives in exactly one of three places:
 
 | Store | Used by | Why there |
 |---|---|---|
-| Gitignored `.env` file on the VM | Docker Compose, the control UI | Read at container start; never leaves the VM |
+| Gitignored `.env` file on the VM | Docker Compose, the control UI | Read at container start |
 | GitHub Actions secret | CI workflows | Encrypted at rest, not exposed to fork pull requests |
 | Windows Credential Manager | Router MCP server | DPAPI-encrypted; no plaintext on disk at all |
 
 The `.env` files live under `/opt/lantern` on the `lantern` VM. The router MCP
 server is the exception that still runs on Windows, which is why its password
 lives in a Windows store.
+
+> **Correction, and it matters: the `.env` files now leave the VM every night.**
+> The nightly backup copies them to `D:\LANtern-Backups\data\<timestamp>\config.tgz`
+> on the Windows host, because they are gitignored and therefore exist nowhere
+> else — a backup that omits them restores a stack that cannot start.
+>
+> On the VM that archive is written mode 600. On D: it is an ordinary file with
+> ordinary permissions. **Treat `D:\LANtern-Backups` as a secret store**: it holds
+> every database password, the RCON password, the Pelican API key, the CurseForge
+> key and the Steam refresh token, in fourteen dated copies. Do not sync that
+> folder anywhere, and if you ever hand someone a backup set, hand them one with
+> `config.tgz` removed.
+>
+> Rotating a secret does not rewrite the old sets. That is the point of them, and
+> also the reason a leak is not cleaned up by rotation alone — see
+> [If a secret leaks](#if-a-secret-leaks). Full detail on the backups is in
+> [../vm/README.md](../vm/README.md).
 
 A quick way to prove nothing leaked before you push:
 
@@ -159,6 +176,9 @@ know what exists and how to rotate it.
 | `PELICAN_API_KEY` | `ui/.env` | `bootstrap/create-ui-credentials.php` |
 | WeaponPaints DB user | `ui/.env` | `bootstrap/setup-weaponpaints-db.sh` |
 | `STARDEW_API_URL`, `STARDEW_API_KEY` | `ui/.env` | copied from `stardew/.env` so the control UI can reach the farm |
+| `VNC_PASSWORD` | `stardew/.env` | you, with `openssl rand -base64 24` — it guards a console that drives the live game |
+
+All of the above are inside `config.tgz` in every nightly backup set on `D:`.
 
 Rotate RCON any time — it regenerates the password, updates Pelican, rewrites
 `ui/.env` and restarts what needs restarting:
@@ -229,3 +249,8 @@ python -m mcp.router.set_password                # optional
 2. Then remove it from history with `git filter-branch` or `git filter-repo`, and
    force-push. Assume anything that reached a public GitHub is already scraped —
    rotation is what actually protects you, not the rewrite.
+3. **Remember the backups.** Up to fourteen dated `config.tgz` files under
+   `D:\LANtern-Backups\data` still contain the old value, and they are on a disk
+   that never gets scrubbed. They are not a leak by themselves — they are on your
+   own machine — but they are why "I deleted the file" is not the same as "the
+   secret is gone", and why step 1 is rotation.
