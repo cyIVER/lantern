@@ -419,9 +419,15 @@ function fmtClock(t) {
 function renderOffline(d) {
   const dl = $('#offline-stats');
   dl.replaceChildren();
-  const mods = d.mods || [];
-  const on = mods.filter((m) => m.enabled).length;
-  if (mods.length) stat(dl, 'MODS', `${on} enabled of ${mods.length}`);
+  // /api/mods returns an envelope, not an array: {ok, dir, mods, enabled,
+  // disabled}. Treating it as a list makes .filter throw, which silently kills
+  // the rest of this function -- which is exactly what it did.
+  const env = d.mods || {};
+  const list = Array.isArray(env) ? env : (env.mods || []);
+  const on = Array.isArray(env)
+    ? list.filter((m) => m.enabled).length
+    : (env.enabled ?? list.filter((m) => m.enabled).length);
+  if (list.length) stat(dl, 'MODS', `${on} enabled of ${list.length}`);
   const bad = (d.mod_problems || []).length;
   if (bad) stat(dl, 'PROBLEMS', `${bad} with missing dependencies`);
 
