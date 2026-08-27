@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# Back up a game server's data to a tarball on the E: drive.
+# Back up one game server's data to a tarball.
 #
 #   bash bootstrap/backup.sh minecraft
 #   bash bootstrap/backup.sh cs2
 #   bash bootstrap/backup.sh minecraft --keep 10
 #
-# Backups land OUTSIDE the WSL ext4 disk on purpose. The game data has to live
-# in ext4 because drvfs cannot chown, but that puts every world inside a single
-# .vhdx -- and a corrupted .vhdx takes the backups with it if they live there
-# too. E: is a different filesystem on a different disk.
+# This is the single-game version, kept because it is the quick thing to reach
+# for before a risky change to one server. vm/backup-all.sh is the complete set
+# -- databases, configs and every world -- and is what runs nightly.
+#
+# It writes inside the VM. Getting the result onto a different physical disk is
+# vm/backup-pull.ps1's job, which copies to D:. A backup that lives only on the
+# machine it is backing up is not one.
 #
 # Minecraft is quiesced rather than stopped: RCON `save-off` + `save-all flush`
 # gets a consistent world without kicking anyone. A tar taken mid-chunk-write
@@ -17,7 +20,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-DEST="${LANTERN_BACKUP_DIR:-/mnt/e/lantern-backups}"
+DEST="${LANTERN_BACKUP_DIR:-/var/backups/lantern}"
 KEEP=5
 GAME="${1:-}"
 [ "${2:-}" = "--keep" ] && KEEP="${3:-5}"
@@ -26,7 +29,7 @@ declare -A GAMES=( [cs2]="LANtern CS2" [minecraft]="LANtern Minecraft" )
 
 # Stardew is not a Pelican server; its saves live in a named compose volume.
 if [ "$GAME" = "stardew" ]; then
-  DEST="${LANTERN_BACKUP_DIR:-/mnt/e/lantern-backups}"
+  DEST="${LANTERN_BACKUP_DIR:-/var/backups/lantern}"
   mkdir -p "$DEST" || { echo "cannot write to ${DEST}" >&2; exit 1; }
   OUT="${DEST}/stardew-$(date -u +%Y%m%d-%H%M%S).tar.zst"
   echo "  archiving the saves volume -> ${OUT}"
