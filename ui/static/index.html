@@ -36,7 +36,8 @@
 </header>
 
 <nav class="tabs">
-  <button class="tab active" data-tab="players">Players</button>
+  <button class="tab active" data-tab="servers">Servers</button>
+  <button class="tab" data-tab="players">Players</button>
   <button class="tab" data-tab="maps">Maps</button>
   <button class="tab" data-tab="mode">Game Mode</button>
   <button class="tab" data-tab="loadout">Loadout</button>
@@ -45,8 +46,24 @@
 </nav>
 
 <main>
+  <!-- ------------------------------------------------------------ SERVERS -->
+  <section id="tab-servers" class="panel active">
+    <div class="panel-head">
+      <h2>Game servers</h2>
+      <span class="hint">one at a time</span>
+    </div>
+    <div id="server-list" class="servers"></div>
+    <p class="note">
+      Only one game can run at a time. CS2 is allocated 8&nbsp;GB and Minecraft
+      11&nbsp;GB on a machine with about 17&nbsp;GB usable, so running two would
+      not be slow &mdash; it would get one of them killed by the kernel,
+      usually mid&#8209;save. Starting a game stops whatever is already up, and
+      asks first.
+    </p>
+  </section>
+
   <!-- ------------------------------------------------------------ PLAYERS -->
-  <section id="tab-players" class="panel active">
+  <section id="tab-players" class="panel">
     <div class="panel-head">
       <h2>Connected Players</h2>
       <span class="hint" id="players-hint">polling every 4s</span>
@@ -171,6 +188,20 @@
 </main>
 
 <div id="toast" class="toast"></div>
+
+<!-- Confirmation for anything that disconnects players. Deliberately not
+     window.confirm(): this needs to name the server being stopped, and a
+     browser dialog cannot be styled to look as serious as it is. -->
+<div id="confirm-backdrop" class="backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h3 id="confirm-title">Switch game server?</h3>
+    <p id="confirm-body"></p>
+    <div class="modal-actions">
+      <button class="btn" id="confirm-cancel">Cancel</button>
+      <button class="btn warn" id="confirm-ok">Stop it and start</button>
+    </div>
+  </div>
+</div>
 
 <script src="/static/app.js"></script>
 </body>

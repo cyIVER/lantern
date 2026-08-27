@@ -113,6 +113,10 @@ services:
       # (skins_en.json etc.) straight from the server's plugin directory, so the
       # skin list always matches the plugin version actually installed.
       - /var/lib/pelican/volumes:/volumes:ro
+      # Stardew is a separate compose project, not a Pelican server, so the
+      # only way to start and stop it is the Docker API. Without this the
+      # Servers page shows Stardew as unavailable rather than failing.
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - panel
     extra_hosts:

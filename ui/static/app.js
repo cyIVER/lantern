@@ -34,8 +34,153 @@ async function api(path, opts = {}) {
   const text = await r.text();
   let data;
   try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
-  if (!r.ok) throw new Error(data.detail || data.raw || `HTTP ${r.status}`);
+  if (!r.ok) {
+    // FastAPI puts structured detail in `detail`, which may be an object --
+    // the server switcher returns one describing what a start would stop.
+    // Stringifying it here would render "[object Object]" to the user, so keep
+    // the object on the error and derive a readable message from it.
+    const d = data.detail;
+    const msg = (typeof d === 'string' && d) || d?.message || data.raw || `HTTP ${r.status}`;
+    const err = new Error(msg);
+    err.detail = d;
+    err.status = r.status;
+    throw err;
+  }
   return data;
+}
+
+/* ------------------------------------------------------------ confirmation */
+/* Resolves true if the operator confirms. Returns a promise so callers can
+   await it inline rather than splitting into callbacks. */
+function confirmDialog(message, okLabel = 'Stop it and start') {
+  return new Promise((resolve) => {
+    const back = $('#confirm-backdrop');
+    $('#confirm-body').textContent = message;
+    $('#confirm-ok').textContent = okLabel;
+    back.hidden = false;
+
+    const done = (answer) => {
+      back.hidden = true;
+      $('#confirm-ok').removeEventListener('click', yes);
+      $('#confirm-cancel').removeEventListener('click', no);
+      document.removeEventListener('keydown', onKey);
+      back.removeEventListener('click', onBackdrop);
+      resolve(answer);
+    };
+    const yes = () => done(true);
+    const no = () => done(false);
+    const onKey = (e) => { if (e.key === 'Escape') done(false); };
+    const onBackdrop = (e) => { if (e.target === back) done(false); };
+
+    $('#confirm-ok').addEventListener('click', yes);
+    $('#confirm-cancel').addEventListener('click', no);
+    document.addEventListener('keydown', onKey);
+    back.addEventListener('click', onBackdrop);
+    $('#confirm-cancel').focus();
+  });
+}
+
+/* ---------------------------------------------------------- game servers */
+const STATE_PILL = {
+  running: 'running', starting: 'starting', stopping: 'stopping',
+  stopped: 'offline', absent: 'unknown', unknown: 'unknown',
+};
+
+let serversBusy = false;
+
+function serverRow(s) {
+  const el = document.createElement('div');
+  el.className = 'server-row' + (s.state === 'running' ? ' is-running' : '');
+  const pill = STATE_PILL[s.state] || 'unknown';
+  const label = s.state === 'stopped' ? 'offline' : s.state;
+
+  el.innerHTML = `
+    <div class="server-id">
+      <strong>${escapeHtml(s.label)}</strong>
+      <span class="server-note">${escapeHtml(s.detail || s.note || '')}</span>
+    </div>
+    <span class="pill ${pill}">${escapeHtml(label)}</span>
+    <div class="server-actions"></div>`;
+
+  const actions = el.querySelector('.server-actions');
+  const busy = serversBusy;
+
+  if (s.state === 'running' || s.state === 'starting') {
+    const stop = document.createElement('button');
+    stop.className = 'btn stop tiny';
+    stop.textContent = 'Stop';
+    stop.disabled = busy;
+    stop.addEventListener('click', () => stopGame(s.id, s.label));
+    actions.append(stop);
+  } else {
+    const start = document.createElement('button');
+    start.className = 'btn go tiny';
+    start.textContent = 'Start';
+    start.disabled = busy || !s.available;
+    if (!s.available) start.title = s.detail || 'unavailable';
+    start.addEventListener('click', () => startGame(s.id, s.label));
+    actions.append(start);
+  }
+  return el;
+}
+
+async function pollServers() {
+  try {
+    const d = await api('/api/servers');
+    const list = $('#server-list');
+    list.replaceChildren(...d.servers.map(serverRow));
+  } catch (e) {
+    $('#server-list').innerHTML =
+      `<div class="empty">Could not read server states: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function startGame(id, label) {
+  serversBusy = true;
+  await pollServers();
+  try {
+    let res;
+    try {
+      res = await api(`/api/servers/${id}/start`, { body: { confirm: false } });
+    } catch (e) {
+      // 409 with needs_confirm is the server asking permission, not a failure.
+      if (e.status === 409 && e.detail && e.detail.needs_confirm) {
+        serversBusy = false;
+        await pollServers();
+        const ok = await confirmDialog(e.detail.message);
+        if (!ok) return;
+        serversBusy = true;
+        await pollServers();
+        res = await api(`/api/servers/${id}/start`, { body: { confirm: true } });
+      } else {
+        throw e;
+      }
+    }
+    const stopped = (res.stopped || []).length
+      ? ` (stopped ${res.stopped.join(', ')})` : '';
+    toast(`Starting ${label}${stopped}.`);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    serversBusy = false;
+    await pollServers();
+  }
+}
+
+async function stopGame(id, label) {
+  if (!await confirmDialog(
+        `Stop ${label}? Anyone connected will be disconnected.`, 'Stop it')) return;
+  serversBusy = true;
+  await pollServers();
+  try {
+    await api(`/api/servers/${id}/stop`, { body: {} });
+    toast(`Stopping ${label}.`);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    serversBusy = false;
+    await pollServers();
+  }
 }
 
 /* ------------------------------------------------------------------- tabs */
@@ -281,9 +426,11 @@ async function loadConfig() {
 (async function init() {
   try { await loadConfig(); }
   catch (e) { toast('Config load failed: ' + e.message, true); }
-  pollState(); pollPlayers();
+  pollState(); pollPlayers(); pollServers();
   setInterval(pollState, 4000);
   setInterval(pollPlayers, 4000);
+  // Slower: a switch takes tens of seconds and nothing else changes this.
+  setInterval(() => { if (!serversBusy) pollServers(); }, 6000);
 })();
 
 /* ------------------------------------------------------------------ loadout

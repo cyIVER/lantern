@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import loadout, presets, rcon, watcher
+from . import loadout, presets, rcon, servers, watcher
 
 STATIC = pathlib.Path(__file__).parent.parent / "static"
 
@@ -545,6 +545,68 @@ async def presets_delete(steamid64: str, slot: int) -> dict[str, Any]:
 @app.get("/api/watcher")
 async def watcher_state() -> dict[str, Any]:
     return watcher.snapshot()
+
+
+# --------------------------------------------------------------- game servers
+# Switching games is destructive: it takes down whatever is running, including
+# anyone mid-round. So the UI must not be able to do it on a single click. The
+# contract is that /start refuses with 409 and names what it would have to stop,
+# and only proceeds once the caller sends confirm=true having shown that to a
+# human. ui/app/servers.py explains why only one server may run.
+class SwitchBody(BaseModel):
+    confirm: bool = False
+
+
+@app.get("/api/servers")
+async def servers_list() -> dict[str, Any]:
+    rows = await servers.status_all()
+    return {"servers": rows, "running": servers.running_ids(rows)}
+
+
+@app.post("/api/servers/{game}/start")
+async def servers_start(game: str, body: SwitchBody) -> dict[str, Any]:
+    if game not in servers.GAMES:
+        raise HTTPException(404, f"unknown game: {game}")
+
+    rows = await servers.status_all()
+    me = next(r for r in rows if r["id"] == game)
+    if not me.get("available"):
+        raise HTTPException(409, me.get("detail", "that server is not available"))
+    if me["state"] in ("running", "starting"):
+        return {"ok": True, "started": game, "stopped": [], "note": "already running"}
+
+    others = [g for g in servers.running_ids(rows) if g != game]
+    if others and not body.confirm:
+        labels = [servers.GAMES[g]["label"] for g in others]
+        joined = " and ".join(labels)
+        raise HTTPException(409, {
+            "needs_confirm": True,
+            "game": game,
+            "label": servers.GAMES[game]["label"],
+            "would_stop": others,
+            "would_stop_labels": labels,
+            "message": (
+                f"Starting {servers.GAMES[game]['label']} will shut down {joined}. "
+                f"Anyone connected will be disconnected."
+            ),
+        })
+
+    try:
+        result = await servers.switch_to(game)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"ok": True, **result}
+
+
+@app.post("/api/servers/{game}/stop")
+async def servers_stop(game: str) -> dict[str, Any]:
+    if game not in servers.GAMES:
+        raise HTTPException(404, f"unknown game: {game}")
+    try:
+        await servers.stop(game)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"ok": True, "stopped": game}
 
 
 @app.get("/")
