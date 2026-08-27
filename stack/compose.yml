@@ -177,7 +177,7 @@ services:
   # Create Schematic Viewer is a private implementation detail of minecraft-ui.
   # No host port, Docker socket, game volume, or Wings network is attached.
   schematic-viewer:
-    image: "${SCHEMATIC_VIEWER_IMAGE:?set to a released GHCR image pinned by digest}"
+    image: "${SCHEMATIC_VIEWER_IMAGE:?must be a released GHCR image with immutable @sha256 digest, not :latest or mutable tag}"
     restart: unless-stopped
     init: true
     expose:

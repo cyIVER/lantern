@@ -24,10 +24,14 @@ ARCHIVE_NAME=$(basename "$ARCHIVE")
 SAFETY_COPY="${ARCHIVE_DIR}/pre-restore-schematic-viewer-$(date -u +%Y%m%d-%H%M%S).tgz"
 LIST=$(mktemp)
 VIEWER_WAS_RUNNING=false
+STAGING_VOLUME=
 ALPINE_RESTORE_IMAGE='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 
 cleanup() {
   rm -f "$LIST"
+  if [ -n "$STAGING_VOLUME" ]; then
+    docker volume rm "$STAGING_VOLUME" >/dev/null 2>&1 || true
+  fi
   if [ "$VIEWER_WAS_RUNNING" = true ]; then
     docker compose start schematic-viewer >/dev/null
     VIEWER_WAS_RUNNING=false
@@ -65,13 +69,52 @@ docker run --rm --network none --read-only --cap-drop ALL \
 [ -s "$SAFETY_COPY" ] || { echo 'could not create the pre-restore safety copy' >&2; exit 1; }
 echo "current library saved to $SAFETY_COPY"
 
+STAGING_VOLUME="${VOLUME}-staging-$(date +%s)"
+docker volume create "$STAGING_VOLUME" >/dev/null
+
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges -v "$STAGING_VOLUME":/staging \
+  -v "$ARCHIVE_DIR":/restore:ro "$ALPINE_RESTORE_IMAGE" \
+  tar -C /staging -xzf "/restore/$ARCHIVE_NAME" || {
+  echo 'failed to extract archive to staging volume' >&2
+  exit 1
+}
+
+if ! docker run --rm --network none --read-only --cap-drop ALL \
+     --security-opt no-new-privileges -v "$STAGING_VOLUME":/staging:ro \
+     "$ALPINE_RESTORE_IMAGE" \
+     sh -ec 'test -n "$(find /staging -mindepth 1 -print -quit)"'; then
+  echo 'staging volume is empty after extraction; archive may be invalid' >&2
+  exit 1
+fi
+
 docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges -v "$VOLUME":/v "$ALPINE_RESTORE_IMAGE" \
-  sh -ec 'find /v -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+  sh -ec 'find /v -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +' || {
+  echo 'failed to clear live volume; restoring from safety copy' >&2
+  docker run --rm --network none --read-only --cap-drop ALL \
+    --security-opt no-new-privileges -v "$VOLUME":/v \
+    -v "$ARCHIVE_DIR":/restore:ro "$ALPINE_RESTORE_IMAGE" \
+    tar -C /v -xzf "/restore/$(basename "$SAFETY_COPY")" || {
+    echo 'CRITICAL: safety copy restore also failed; manual recovery required' >&2
+    exit 1
+  }
+  exit 1
+}
+
 docker run --rm --network none --read-only --cap-drop ALL \
-  --security-opt no-new-privileges -v "$VOLUME":/v \
-  -v "$ARCHIVE_DIR":/restore:ro "$ALPINE_RESTORE_IMAGE" \
-  tar -C /v -xzf "/restore/$ARCHIVE_NAME"
+  --security-opt no-new-privileges -v "$VOLUME":/v -v "$STAGING_VOLUME":/staging:ro \
+  "$ALPINE_RESTORE_IMAGE" sh -ec 'cp -a /staging/. /v/' || {
+  echo 'failed to copy staging to live volume; restoring from safety copy' >&2
+  docker run --rm --network none --read-only --cap-drop ALL \
+    --security-opt no-new-privileges -v "$VOLUME":/v \
+    -v "$ARCHIVE_DIR":/restore:ro "$ALPINE_RESTORE_IMAGE" \
+    tar -C /v -xzf "/restore/$(basename "$SAFETY_COPY")" || {
+    echo 'CRITICAL: safety copy restore also failed; manual recovery required' >&2
+    exit 1
+  }
+  exit 1
+}
 
 if ! docker run --rm --network none --read-only --cap-drop ALL \
      --security-opt no-new-privileges -v "$VOLUME":/v:ro \

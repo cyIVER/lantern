@@ -263,10 +263,12 @@ Rotate one secret at a time:
 
 - **Admin password:** rerun the `docker run` command, then
   `docker compose up -d --no-deps --force-recreate minecraft-ui`.
-- **Session secret:** replace it with `openssl rand -base64 48`, set mode 600,
-  and recreate only `minecraft-ui`. Existing admin sessions are invalidated.
-- **Viewer token:** replace it with `openssl rand -base64 48`, set mode 600,
-  then run `docker compose up -d --no-deps --force-recreate schematic-viewer minecraft-ui`
+- **Session secret:** replace it with `openssl rand -base64 48`, set group to
+  `id -g` and mode 640, then recreate only `minecraft-ui`. Existing admin
+  sessions are invalidated.
+- **Viewer token:** replace it with `openssl rand -base64 48`, set group to
+  `id -g` and mode 640, then run
+  `docker compose up -d --no-deps --force-recreate schematic-viewer minecraft-ui`
   so both consumers change together.
 
 These commands never restart Wings or the Minecraft game. The viewer-token
