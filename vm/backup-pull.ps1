@@ -101,6 +101,107 @@ function Test-BackupStatus {
         -and $minecraftStateIsValid
 }
 
+function Test-BackupTransferIntegrity {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $manifestPath = Join-Path $Path 'SHA256SUMS'
+    try {
+        $root = Get-Item -LiteralPath $Path -Force
+        if (-not $root.PSIsContainer `
+            -or ($root.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            return $false
+        }
+        if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+            return $false
+        }
+        $manifest = Get-Item -LiteralPath $manifestPath -Force
+        if ($manifest.Name -cne 'SHA256SUMS' `
+            -or ($manifest.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            return $false
+        }
+        $lines = @(Get-Content -LiteralPath $manifestPath)
+    } catch {
+        return $false
+    }
+
+    if ($lines.Count -eq 0 -or $lines.Count -gt 4096) {
+        return $false
+    }
+    $expectedHashes = [Collections.Generic.Dictionary[string, string]]::new(
+        [StringComparer]::Ordinal
+    )
+    $seenNames = [Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($line in $lines) {
+        if ($line.Length -gt 400 -or $line -cnotmatch '^(?<hash>[0-9a-f]{64})  (?<name>.+)$') {
+            return $false
+        }
+        $hash = $Matches.hash
+        $name = $Matches.name
+        # Backup sets are intentionally flat. A conservative filename alphabet
+        # also prevents rooted, traversal, separator, stream, and control syntax.
+        if ($name.Length -gt 255 `
+            -or $name -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' `
+            -or $name.EndsWith('.') `
+            -or $name -ceq 'SHA256SUMS') {
+            return $false
+        }
+        $baseName = $name.Split('.')[0]
+        if ($baseName -imatch '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$') {
+            return $false
+        }
+        if (-not $seenNames.Add($name)) {
+            return $false
+        }
+        $expectedHashes.Add($name, $hash.ToUpperInvariant())
+    }
+    if (-not $expectedHashes.ContainsKey('MANIFEST.txt') `
+        -or -not $expectedHashes.ContainsKey('BACKUP_STATUS.json')) {
+        return $false
+    }
+
+    try {
+        $children = @(Get-ChildItem -LiteralPath $Path -Force)
+        if (@($children | Where-Object { $_.PSIsContainer }).Count -ne 0) {
+            return $false
+        }
+        $localFiles = @(
+            $children | Where-Object { -not $_.PSIsContainer -and $_.Name -cne 'SHA256SUMS' }
+        )
+        if ($localFiles.Count -ne $expectedHashes.Count) {
+            return $false
+        }
+        foreach ($file in $localFiles) {
+            if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                return $false
+            }
+            if (-not $expectedHashes.ContainsKey($file.Name)) {
+                return $false
+            }
+            $stream = $null
+            $sha256 = $null
+            try {
+                $stream = [IO.File]::OpenRead($file.FullName)
+                $sha256 = [Security.Cryptography.SHA256]::Create()
+                $actualHash = [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '')
+            } finally {
+                if ($null -ne $stream) { $stream.Dispose() }
+                if ($null -ne $sha256) { $sha256.Dispose() }
+            }
+            if ($actualHash -cne $expectedHashes[$file.Name]) {
+                return $false
+            }
+        }
+    } catch {
+        return $false
+    }
+
+    return $true
+}
+
 # ------------------------------------------------------------------ preflight
 if (-not (Test-Path $Key)) { Log "no SSH key at $Key"; exit 1 }
 
@@ -116,38 +217,66 @@ if ($LASTEXITCODE -ne 0) { Log 'VM is running but SSH did not answer'; exit 1 }
 
 # ----------------------------------------------------------------- back up
 Log 'running backup-all.sh on the VM'
-$backupFailed = $false
-$out = & $ssh @o "$VmUser@$VmHost" 'set -o pipefail; bash /opt/lantern/vm/backup-all.sh 2>&1 | tail -4'
-$out | ForEach-Object { Log "    $($_ -replace '\x1b\[[0-9;]*m','')" }
-if ($LASTEXITCODE -ne 0) {
-    $backupFailed = $true
+$out = @(& $ssh @o "$VmUser@$VmHost" 'set -o pipefail; bash /opt/lantern/vm/backup-all.sh 2>&1 | tail -4')
+$backupExitCode = $LASTEXITCODE
+$resultMarkerPrefix = 'LANTERN_BACKUP_RESULT_V1:'
+$resultMarkers = @($out | Where-Object { $_.StartsWith($resultMarkerPrefix) })
+$out | Where-Object { -not $_.StartsWith($resultMarkerPrefix) } |
+    ForEach-Object { Log "    $($_ -replace '\x1b\[[0-9;]*m','')" }
+$backupFailed = $backupExitCode -ne 0
+if ($backupFailed) {
     Log 'backup-all.sh reported failures -- pulling anyway so you have what it did get'
 }
 
-$latest = (& $ssh @o "$VmUser@$VmHost" 'ls -1d /var/backups/lantern/*/ | tail -1').Trim()
-if (-not $latest) { Log 'no backup directory produced'; exit 1 }
-$stamp = (Split-Path $latest.TrimEnd('/') -Leaf)
+if ($resultMarkers.Count -ne 1 `
+    -or $out.Count -eq 0 `
+    -or $out[-1] -cne $resultMarkers[0]) {
+    Log 'backup result path marker is missing or ambiguous'
+    exit 1
+}
+$remoteResultPath = $resultMarkers[0].Substring($resultMarkerPrefix.Length)
+if ($remoteResultPath -cmatch '^/var/backups/lantern/(?<stamp>[0-9]{8}-[0-9]{6})/$') {
+    $stamp = $Matches.stamp
+} elseif ($backupFailed `
+    -and $remoteResultPath -cmatch '^/var/backups/lantern/\.(?<stamp>[0-9]{8}-[0-9]{6})\.staging\.[A-Za-z0-9]{6}/$') {
+    $stamp = $Matches.stamp
+} else {
+    Log 'invalid backup result path marker'
+    exit 1
+}
 
 # -------------------------------------------------------------------- pull
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
-$target = Join-Path $Dest $stamp
-if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+$destPath = [IO.Path]::GetFullPath($Dest)
+$target = [IO.Path]::GetFullPath((Join-Path $destPath $stamp))
+$destComparison = $destPath.TrimEnd('\', '/')
+$targetParent = [IO.Directory]::GetParent($target).FullName.TrimEnd('\', '/')
+if ($targetParent -ine $destComparison) {
+    Log 'refusing backup target outside the destination root'
+    exit 1
+}
+$staging = Join-Path $destPath (".$stamp.transfer-{0}" -f [Guid]::NewGuid().ToString('N'))
 
 Log "pulling $stamp to $Dest"
-& $scp @o -r "${VmUser}@${VmHost}:$latest" $target 2>$null
+& $scp @o -r "${VmUser}@${VmHost}:$remoteResultPath" $staging 2>$null
 if ($LASTEXITCODE -ne 0) { Log 'scp failed'; exit 1 }
 
 # Verify against the VM's own manifest rather than trusting scp's exit code.
-$remoteCount = [int](& $ssh @o "$VmUser@$VmHost" "ls -1 $latest | wc -l").Trim()
-$localCount  = (Get-ChildItem $target -File).Count
+$remoteCount = [int](& $ssh @o "$VmUser@$VmHost" "ls -1 $remoteResultPath | wc -l").Trim()
+$localCount  = (Get-ChildItem $staging -File).Count
 if ($localCount -lt $remoteCount) {
+    $backupFailed = $true
     Log "INCOMPLETE: $localCount of $remoteCount files arrived"
-    exit 1
 }
-$size = '{0:N1} MB' -f ((Get-ChildItem $target -File | Measure-Object Length -Sum).Sum / 1MB)
+$size = '{0:N1} MB' -f ((Get-ChildItem $staging -File | Measure-Object Length -Sum).Sum / 1MB)
 Log "$localCount files, $size"
 
-$statusPath = Join-Path $target 'BACKUP_STATUS.json'
+if (-not (Test-BackupTransferIntegrity -Path $staging)) {
+    $backupFailed = $true
+    Log 'INCOMPLETE: SHA256SUMS transfer verification failed'
+}
+
+$statusPath = Join-Path $staging 'BACKUP_STATUS.json'
 if (-not (Test-Path -LiteralPath $statusPath)) {
     $backupFailed = $true
     Log 'INCOMPLETE: BACKUP_STATUS.json is missing'
@@ -158,12 +287,52 @@ if (-not (Test-Path -LiteralPath $statusPath)) {
     }
 }
 
+# A set is published under its stable timestamp only after the remote command,
+# transfer inventory, and restore-eligibility status all agree. Failed evidence
+# stays diagnostic and is excluded from retention eligibility.
+if (-not $backupFailed) {
+    $targetExistedBeforePublish = Test-Path -LiteralPath $target
+    try {
+        # Directory.Move is an atomic, no-replace rename on the same volume.
+        # Unlike Move-Item, it cannot silently nest staging inside a target
+        # created after the advisory existence check above.
+        [IO.Directory]::Move($staging, $target)
+    } catch {
+        $backupFailed = $true
+        if ($targetExistedBeforePublish) {
+            Log "INCOMPLETE: backup set $stamp already exists -- refusing to overwrite it"
+        } else {
+            Log 'INCOMPLETE: verified backup set could not be published atomically'
+        }
+    }
+}
+
+if (-not $backupFailed) {
+    # Revalidate the stable path after the atomic rename so a published set is
+    # never trusted solely on checks performed under its staging name.
+    $publishedIntegrityValid = Test-BackupTransferIntegrity -Path $target
+    $publishedStatusValid = Test-BackupStatus `
+        -Path (Join-Path $target 'BACKUP_STATUS.json') `
+        -ExpectedBackupId $stamp
+    if (-not $publishedIntegrityValid -or -not $publishedStatusValid) {
+        $backupFailed = $true
+        Log 'INCOMPLETE: backup set failed validation after publication'
+        try {
+            [IO.Directory]::Move($target, $staging)
+            Log 'invalid published set returned to diagnostic staging'
+        } catch {
+            Log 'INCOMPLETE: invalid published set could not be returned to diagnostic staging'
+        }
+    }
+}
+
 # ------------------------------------------------------------------- prune
 $sets = @(Get-ChildItem $Dest -Directory | Sort-Object Name)
 if (-not $backupFailed) {
     $completeSets = @($sets | Where-Object {
         $candidateStatus = Join-Path $_.FullName 'BACKUP_STATUS.json'
-        Test-BackupStatus -Path $candidateStatus -ExpectedBackupId $_.Name
+        (Test-BackupTransferIntegrity -Path $_.FullName) `
+            -and (Test-BackupStatus -Path $candidateStatus -ExpectedBackupId $_.Name)
     })
     if ($completeSets.Count -gt $Keep) {
         $old = $completeSets | Select-Object -First ($completeSets.Count - $Keep)

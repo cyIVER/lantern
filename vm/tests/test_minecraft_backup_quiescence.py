@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +18,7 @@ BACKUP_PULL_SCRIPT = ROOT / "vm" / "backup-pull.ps1"
 SINGLE_BACKUP_SCRIPT = ROOT / "stack" / "bootstrap" / "backup.sh"
 MC_UUID = "2be9425c-1141-4181-b0a0-34f38d84fb7f"
 SENTINEL_PASSWORD = "test-rcon-password-must-not-leak"
+RESULT_MARKER = "LANTERN_BACKUP_RESULT_V1:"
 
 
 def _bash_path(path: Path) -> str:
@@ -29,6 +33,35 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
+def _write_verified_backup_set(
+    directory: Path, status_updates: dict[str, object] | None = None
+) -> None:
+    directory.mkdir(parents=True)
+    (directory / "MANIFEST.txt").write_text("verified fixture\n", encoding="utf-8")
+    status: dict[str, object] = {
+        "schema": 1,
+        "event": "backup.completed",
+        "backup_id": directory.name,
+        "status": "complete",
+        "failure_count": 0,
+        "failure_codes": [],
+        "components": {"minecraft_world": "offline_consistent"},
+    }
+    status.update(status_updates or {})
+    (directory / "BACKUP_STATUS.json").write_text(
+        json.dumps(status, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    records = []
+    for payload in sorted(directory.iterdir(), key=lambda path: path.name):
+        records.append(
+            f"{hashlib.sha256(payload.read_bytes()).hexdigest()}  {payload.name}"
+        )
+    (directory / "SHA256SUMS").write_text(
+        "\n".join(records) + "\n", encoding="ascii", newline="\n"
+    )
+
+
 def _run_backup(
     tmp_path: Path,
     *,
@@ -37,6 +70,8 @@ def _run_backup(
     minecraft_present: bool = True,
     helper_state: str = "executable",
     keep: int = 7,
+    fixed_stamp: str | None = None,
+    root_owned_destination: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[str], dict[str, object]]:
     stack = tmp_path / "stack"
     bootstrap = stack / "bootstrap"
@@ -59,7 +94,7 @@ def _run_backup(
 
     _write_executable(
         fake_bin / "docker",
-        rf'''#!/usr/bin/env bash
+        rf"""#!/usr/bin/env bash
 set -u
 joined=" $* "
 case "$joined" in
@@ -107,7 +142,7 @@ case "$joined" in
   *" volume inspect "*) exit 1 ;;
 esac
 exit 0
-''',
+""",
     )
     _write_executable(
         fake_bin / "sudo",
@@ -117,12 +152,54 @@ if [ "$1" = test ] && [ "${{2:-}}" = -d ] && [[ "${{3:-}}" == *"{MC_UUID}" ]]; t
   [ "${{FAKE_MC_PRESENT:-true}}" = true ]
   exit
 fi
+if [ "${{FAKE_ROOT_OWNED_DESTINATION:-false}}" = true ]; then
+  export FAKE_VIA_SUDO=true
+fi
 exec "$@"
 ''',
     )
     _write_executable(
+        fake_bin / "mktemp",
+        r"""#!/usr/bin/env bash
+set -u
+template=${!#}
+parent=${template%/*}
+if [ "${FAKE_ROOT_OWNED_DESTINATION:-false}" = true ] \
+   && [ "$parent" = "$FAKE_BACKUP_DESTINATION" ] \
+   && [ "${FAKE_VIA_SUDO:-false}" != true ]; then
+  exit 13
+fi
+exec /usr/bin/mktemp "$@"
+""",
+    )
+    _write_executable(
+        fake_bin / "mv",
+        r"""#!/usr/bin/env bash
+set -u
+target=${!#}
+parent=${target%/*}
+if [ "${FAKE_FAIL_STAGE:-}" = set_publish ] \
+   && [ "$parent" = "$FAKE_BACKUP_DESTINATION" ]; then
+  exit 13
+fi
+if [ "${FAKE_ROOT_OWNED_DESTINATION:-false}" = true ] \
+   && [ "$parent" = "$FAKE_BACKUP_DESTINATION" ] \
+   && [ "${FAKE_VIA_SUDO:-false}" != true ]; then
+  exit 13
+fi
+/usr/bin/mv "$@"
+status=$?
+if [ "$status" -eq 0 ] \
+   && [ "${FAKE_FAIL_STAGE:-}" = checksum_post_publish_missing ] \
+   && [ "$parent" = "$FAKE_BACKUP_DESTINATION" ]; then
+  rm -f -- "$target/SHA256SUMS"
+fi
+exit "$status"
+""",
+    )
+    _write_executable(
         fake_bin / "tar",
-        r'''#!/usr/bin/env bash
+        r"""#!/usr/bin/env bash
 set -u
 output=
 next=false
@@ -135,15 +212,20 @@ case "$output" in
   *minecraft-world.tgz)
     printf 'world-archive\n' >> "$FAKE_OPERATION_LOG"
     [ "${FAKE_FAIL_STAGE:-}" != archive ] || exit 1
+    if [ "${FAKE_FAIL_STAGE:-}" = checksum_unexpected_name ]; then
+      printf 'unexpected\n' > "$(dirname "$output")/unsafe payload.txt"
+    elif [ "${FAKE_FAIL_STAGE:-}" = checksum_unexpected_directory ]; then
+      mkdir -p "$(dirname "$output")/unexpected-directory"
+    fi
     ;;
 esac
 mkdir -p "$(dirname "$output")"
 printf 'test archive\n' > "$output"
-''',
+""",
     )
     _write_executable(
         fake_bin / "python3",
-        r'''#!/usr/bin/env bash
+        r"""#!/usr/bin/env bash
 set -uo pipefail
 if [[ "${1:-}" == */mc-rcon.py ]]; then
   shift
@@ -161,9 +243,58 @@ if [[ "${1:-}" == */mc-rcon.py ]]; then
   exit 0
 fi
 exec "$REAL_PYTHON" "$@"
-''',
+""",
+    )
+    _write_executable(
+        fake_bin / "sha256sum",
+        r"""#!/usr/bin/env bash
+set -u
+case "${FAKE_FAIL_STAGE:-}:${1:-}" in
+  checksum_generate:--) exit 1 ;;
+  checksum_verify:-c) exit 1 ;;
+esac
+if [ "${FAKE_FAIL_STAGE:-}:${1:-}" = checksum_final_verify:-c ]; then
+  count_file="$FAKE_STATE_DIR/checksum-verify-count"
+  count=0
+  [ ! -f "$count_file" ] || read -r count < "$count_file"
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$count_file"
+  [ "$count" -lt 2 ] || exit 1
+fi
+if [ "${FAKE_FAIL_STAGE:-}:${1:-}" = checksum_post_publish_verify:-c ]; then
+  count_file="$FAKE_STATE_DIR/checksum-verify-count"
+  count=0
+  [ ! -f "$count_file" ] || read -r count < "$count_file"
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$count_file"
+  [ "$count" -lt 3 ] || exit 1
+fi
+exec /usr/bin/sha256sum "$@"
+""",
+    )
+    _write_executable(
+        fake_bin / "chmod",
+        r"""#!/usr/bin/env bash
+set -u
+if [ "${FAKE_FAIL_STAGE:-}" = checksum_permission ]; then
+  for argument in "$@"; do
+    case "$argument" in *.SHA256SUMS.*) exit 1 ;; esac
+  done
+fi
+exec /usr/bin/chmod "$@"
+""",
     )
     _write_executable(fake_bin / "sleep", "#!/usr/bin/env bash\nexit 0\n")
+    if fixed_stamp is not None:
+        _write_executable(
+            fake_bin / "date",
+            f"""#!/usr/bin/env bash
+case "$*" in
+  *%Y%m%d*) printf '%s\\n' '{fixed_stamp}' ;;
+  *) printf '%s\\n' '2026-08-27T00:00:00Z' ;;
+esac
+""",
+        )
 
     bash = shutil.which("bash") or "bash"
     if os.name == "nt":
@@ -177,6 +308,8 @@ exec "$REAL_PYTHON" "$@"
         "FAKE_MC_RUNNING": str(running).lower(),
         "FAKE_MC_PRESENT": str(minecraft_present).lower(),
         "FAKE_FAIL_STAGE": fail_stage,
+        "FAKE_ROOT_OWNED_DESTINATION": str(root_owned_destination).lower(),
+        "FAKE_BACKUP_DESTINATION": _bash_path(destination),
         "FAKE_EXPECTED_RCON_PASSWORD": SENTINEL_PASSWORD,
         "REAL_PYTHON": _bash_path(Path(sys.executable)),
         "LANTERN_STACK": _bash_path(stack),
@@ -223,7 +356,7 @@ def _run_single_backup_state(
     operations = state / "operations.log"
     _write_executable(
         fake_bin / "docker",
-        rf'''#!/usr/bin/env bash
+        rf"""#!/usr/bin/env bash
 set -u
 joined=" $* "
 case "$joined" in
@@ -273,11 +406,11 @@ case "$joined" in
     ;;
 esac
 exit 0
-''',
+""",
     )
     _write_executable(
         fake_bin / "python3",
-        r'''#!/usr/bin/env bash
+        r"""#!/usr/bin/env bash
 set -uo pipefail
 if [[ "${1:-}" == */mc-rcon.py ]]; then
   shift
@@ -292,7 +425,7 @@ if [[ "${1:-}" == */mc-rcon.py ]]; then
   exit 0
 fi
 exit 1
-''',
+""",
     )
     _write_executable(fake_bin / "sleep", "#!/usr/bin/env bash\nexit 0\n")
     _write_executable(fake_bin / "zstd", "#!/usr/bin/env bash\nexit 0\n")
@@ -357,6 +490,158 @@ def test_running_minecraft_quiesces_archives_and_resumes_in_order(
     assert status["components"]["minecraft_world"] == "quiesced_consistent"
 
 
+def test_success_publishes_verified_checksum_manifest_for_every_payload(
+    tmp_path: Path,
+) -> None:
+    result, _operations, _status = _run_backup(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    output_lines = result.stdout.splitlines()
+    assert [line for line in output_lines if line.startswith(RESULT_MARKER)] == [
+        output_lines[-1]
+    ]
+    backup_dir = max((tmp_path / "backups").iterdir())
+    checksum_path = backup_dir / "SHA256SUMS"
+    assert checksum_path.is_file()
+    assert not list((tmp_path / "backups").glob(".*.staging.*"))
+    if os.name != "nt":
+        assert stat.S_IMODE(checksum_path.stat().st_mode) == 0o600
+    assert not list(backup_dir.glob(".SHA256SUMS.*"))
+    assert not list((tmp_path / "backups").glob("*.SHA256SUMS.*"))
+
+    records: dict[str, str] = {}
+    for line in checksum_path.read_text(encoding="utf-8").splitlines():
+        assert re.fullmatch(r"[0-9a-f]{64}  [A-Za-z0-9][A-Za-z0-9._-]*", line)
+        digest, basename = line.split("  ", maxsplit=1)
+        assert basename not in records
+        records[basename] = digest
+
+    expected = {
+        path.name
+        for path in backup_dir.iterdir()
+        if path.is_file() and path.name != "SHA256SUMS"
+    }
+    assert set(records) == expected
+    assert {"MANIFEST.txt", "BACKUP_STATUS.json"} <= set(records)
+    for basename, digest in records.items():
+        payload = backup_dir / basename
+        assert hashlib.sha256(payload.read_bytes()).hexdigest() == digest
+
+
+def test_root_owned_destination_allows_atomic_checksum_and_set_publication(
+    tmp_path: Path,
+) -> None:
+    result, _operations, status = _run_backup(tmp_path, root_owned_destination=True)
+
+    assert result.returncode == 0, result.stderr
+    assert status["status"] == "complete"
+    backup_dir = max((tmp_path / "backups").iterdir())
+    assert (backup_dir / "SHA256SUMS").is_file()
+
+
+def test_same_stamp_collision_cannot_mix_backup_sets(tmp_path: Path) -> None:
+    stamp = "20260827-000000"
+    existing = tmp_path / "backups" / stamp
+    existing.mkdir(parents=True)
+    sentinel = existing / "existing-evidence.txt"
+    sentinel.write_text("original set\n", encoding="utf-8")
+
+    result, _operations, _status = _run_backup(tmp_path, fixed_stamp=stamp)
+
+    assert result.returncode != 0
+    assert sentinel.read_text(encoding="utf-8") == "original set\n"
+    assert list(existing.iterdir()) == [sentinel]
+    assert not list((tmp_path / "backups").glob(f".{stamp}.staging.*"))
+
+
+def test_set_publish_failure_reports_current_hidden_diagnostic_path(
+    tmp_path: Path,
+) -> None:
+    stamp = "20260827-000000"
+    result, _operations, _status = _run_backup(
+        tmp_path, fail_stage="set_publish", fixed_stamp=stamp
+    )
+
+    output_lines = result.stdout.splitlines()
+    marker = output_lines[-1]
+    hidden_sets = list((tmp_path / "backups").glob(f".{stamp}.staging.*"))
+    assert result.returncode != 0
+    assert len(hidden_sets) == 1
+    assert [line for line in output_lines if line.startswith(RESULT_MARKER)] == [marker]
+    assert re.fullmatch(
+        rf"{RESULT_MARKER}.*/\.{stamp}\.staging\.[A-Za-z0-9]{{6}}/", marker
+    )
+    status = json.loads(
+        (hidden_sets[0] / "BACKUP_STATUS.json").read_text(encoding="utf-8")
+    )
+    assert status["status"] == "incomplete"
+    assert "backup.set_publish_failed" in status["failure_codes"]
+    assert not (hidden_sets[0] / "SHA256SUMS").exists()
+
+
+def test_incomplete_published_set_reports_stable_result_path(tmp_path: Path) -> None:
+    stamp = "20260827-000000"
+    result, _operations, status = _run_backup(
+        tmp_path, fail_stage="archive", fixed_stamp=stamp
+    )
+
+    assert result.returncode != 0
+    assert status["status"] == "incomplete"
+    output_lines = result.stdout.splitlines()
+    assert [line for line in output_lines if line.startswith(RESULT_MARKER)] == [
+        output_lines[-1]
+    ]
+    assert output_lines[-1].endswith(f"/{stamp}/")
+
+
+@pytest.mark.parametrize(
+    "stage",
+    [
+        "checksum_generate",
+        "checksum_verify",
+        "checksum_final_verify",
+        "checksum_post_publish_verify",
+        "checksum_post_publish_missing",
+        "checksum_permission",
+        "checksum_unexpected_name",
+        "checksum_unexpected_directory",
+    ],
+)
+def test_checksum_manifest_failure_is_incomplete_and_never_prunes(
+    tmp_path: Path, stage: str
+) -> None:
+    prior = tmp_path / "backups" / "20260101-000000"
+    prior.mkdir(parents=True)
+    (prior / "BACKUP_STATUS.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "event": "backup.completed",
+                "backup_id": prior.name,
+                "status": "complete",
+                "failure_count": 0,
+                "failure_codes": [],
+                "components": {"minecraft_world": "offline_consistent"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result, _operations, status = _run_backup(tmp_path, fail_stage=stage, keep=0)
+
+    current = max(path for path in (tmp_path / "backups").iterdir() if path != prior)
+    assert result.returncode != 0
+    assert status["status"] == "incomplete"
+    assert "backup.checksum_manifest_failed" in status["failure_codes"]
+    assert f"failures: {status['failure_count']}" in (
+        current / "MANIFEST.txt"
+    ).read_text(encoding="utf-8")
+    assert not (current / "SHA256SUMS").exists()
+    assert not list((tmp_path / "backups").glob("*.SHA256SUMS.*"))
+    assert prior.is_dir()
+
+
 @pytest.mark.parametrize(
     ("stage", "reason", "expect_resume"),
     [
@@ -381,7 +666,9 @@ def test_running_minecraft_refuses_archive_when_quiescence_fails(
     assert resumes == int(expect_resume)
     assert status["status"] == "incomplete"
     assert reason in status["failure_codes"]
-    combined = result.stdout + result.stderr + "\n".join(operations) + json.dumps(status)
+    combined = (
+        result.stdout + result.stderr + "\n".join(operations) + json.dumps(status)
+    )
     assert SENTINEL_PASSWORD not in combined
 
 
@@ -403,7 +690,9 @@ def test_resume_failure_makes_backup_incomplete_without_leaking_secret(
     assert "world-archive" in operations
     assert operations.count("rcon:127.0.0.1:25575:save-on") == 1
     assert "minecraft.rcon_resume_failed" in status["failure_codes"]
-    combined = result.stdout + result.stderr + "\n".join(operations) + json.dumps(status)
+    combined = (
+        result.stdout + result.stderr + "\n".join(operations) + json.dumps(status)
+    )
     assert SENTINEL_PASSWORD not in combined
 
 
@@ -428,9 +717,7 @@ def test_incomplete_backup_never_prunes_prior_sets(tmp_path: Path) -> None:
             encoding="utf-8",
         )
 
-    result, _operations, status = _run_backup(
-        tmp_path, fail_stage="save_off", keep=2
-    )
+    result, _operations, status = _run_backup(tmp_path, fail_stage="save_off", keep=2)
 
     assert result.returncode != 0
     assert status["status"] == "incomplete"
@@ -524,24 +811,12 @@ def test_success_prunes_only_verified_complete_sets(tmp_path: Path) -> None:
     complete_sets = [destination / "20260101-000000", destination / "20260201-000000"]
     incomplete = destination / "20260301-000000"
     legacy = destination / "20260401-000000"
-    for directory in [*complete_sets, incomplete, legacy]:
-        directory.mkdir(parents=True)
+    wrong_type = destination / "20260501-000000"
     for directory in complete_sets:
-        (directory / "BACKUP_STATUS.json").write_text(
-            json.dumps(
-                {
-                    "schema": 1,
-                    "event": "backup.completed",
-                    "backup_id": directory.name,
-                    "status": "complete",
-                    "failure_count": 0,
-                    "failure_codes": [],
-                    "components": {"minecraft_world": "offline_consistent"},
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        _write_verified_backup_set(directory)
+    incomplete.mkdir(parents=True)
+    legacy.mkdir(parents=True)
+    _write_verified_backup_set(wrong_type, {"schema": "1"})
     (incomplete / "BACKUP_STATUS.json").write_text(
         '{"schema":1,"status":"incomplete"}\n', encoding="utf-8"
     )
@@ -554,12 +829,31 @@ def test_success_prunes_only_verified_complete_sets(tmp_path: Path) -> None:
     assert complete_sets[1].exists()
     assert incomplete.exists()
     assert legacy.exists()
+    assert wrong_type.exists()
+
+
+def test_successful_retention_never_prunes_checksum_corrupted_set(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "backups"
+    oldest_verified = destination / "20260101-000000"
+    corrupted = destination / "20260201-000000"
+    _write_verified_backup_set(oldest_verified)
+    _write_verified_backup_set(corrupted)
+    (corrupted / "MANIFEST.txt").write_text(
+        "tampered after hashing\n", encoding="utf-8"
+    )
+
+    result, _operations, status = _run_backup(tmp_path, keep=1)
+
+    assert result.returncode == 0
+    assert status["status"] == "complete"
+    assert not oldest_verified.exists()
+    assert corrupted.is_dir()
 
 
 def test_single_game_backup_sets_cleanup_and_recovery_intent_before_save_off() -> None:
-    script = (ROOT / "stack" / "bootstrap" / "backup.sh").read_text(
-        encoding="utf-8"
-    )
+    script = (ROOT / "stack" / "bootstrap" / "backup.sh").read_text(encoding="utf-8")
 
     trap_position = script.index("trap finish EXIT")
     save_off_position = script.index('rcon "save-off"')
@@ -568,7 +862,7 @@ def test_single_game_backup_sets_cleanup_and_recovery_intent_before_save_off() -
     assert trap_position < disabled_position < save_off_position < flush_position
     assert "refusing a live world archive" in script
     assert "trap - EXIT" in script
-    assert 'restore_saves || status=1' in script
+    assert "restore_saves || status=1" in script
     assert 'exit "$status"' in script
 
 

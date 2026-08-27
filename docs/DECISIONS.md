@@ -551,6 +551,14 @@ Three decisions inside it are the ones worth keeping:
   and a backup you can only read by booting the thing that died is not a backup.
   D: is the Toshiba HDD; the VM lives on the Samsung SSD. Different physical
   disk, which is the entire point.
+- **Transfer integrity is cryptographic, not a file-count guess.** Every
+  restore-eligible set carries `SHA256SUMS` for every other regular file. The VM
+  verifies it before reporting success, and the Windows pull independently
+  requires an exact filename set and matching hashes before accepting the status
+  contract or pruning any prior backup.
+  This detects corruption and partial transfer, not malicious substitution: the
+  scheduled pull still trusts the VM on the local LAN under its existing SSH
+  host-key policy.
 
 The scheduled task exits quietly and successfully when the VM is off. That is the
 normal case rather than an error worth alerting about, because the VM is started
