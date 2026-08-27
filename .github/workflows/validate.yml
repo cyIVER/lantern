@@ -73,9 +73,10 @@ jobs:
         run: |
           umask 077
           mkdir -p stack/secrets
-          openssl rand -hex 32 > stack/secrets/minecraft-admin-password-hash
+          printf '{"version":1,"users":[]}\n' > stack/secrets/minecraft-admins.json
           openssl rand -hex 32 > stack/secrets/minecraft-session-secret
           openssl rand -hex 32 > stack/secrets/schematic-viewer-admin-token
+          openssl rand -hex 32 > stack/secrets/pelican-client-api-key
           touch ui/.env
 
       - name: validate rendered Compose model
@@ -128,11 +129,14 @@ jobs:
           mkdir -p stack/secrets
           openssl rand -hex 32 > stack/secrets/minecraft-session-secret
           openssl rand -hex 32 > stack/secrets/schematic-viewer-admin-token
+          openssl rand -hex 32 > stack/secrets/pelican-client-api-key
           openssl rand -base64 36 > "$RUNNER_TEMP/minecraft-admin-password"
-          docker run --rm -i lantern/minecraft-ui:latest \
+          admin_hash=$(docker run --rm -i lantern/minecraft-ui:latest \
             python -c 'import sys; from argon2 import PasswordHasher; print(PasswordHasher().hash(sys.stdin.read().strip()))' \
-            < "$RUNNER_TEMP/minecraft-admin-password" \
-            > stack/secrets/minecraft-admin-password-hash
+            < "$RUNNER_TEMP/minecraft-admin-password")
+          jq --null-input --arg hash "$admin_hash" \
+            '{version: 1, users: [{username: "iveri", password_hash: $hash, role: "admin", upstream_alias: "iveri", credential_version: 1}]}' \
+            > stack/secrets/minecraft-admins.json
           secret_gid=$(id -g)
           chgrp "$secret_gid" stack/secrets/*
           chmod 640 stack/secrets/*
@@ -204,15 +208,16 @@ jobs:
           fi
 
           jq --null-input --rawfile password "$RUNNER_TEMP/minecraft-admin-password" \
-            '{password: ($password | rtrimstr("\n"))}' > "$RUNNER_TEMP/login.json"
+            '{type: "session.login", username: "iveri", password: ($password | rtrimstr("\n"))}' \
+            > "$RUNNER_TEMP/login.json"
           login_status=$(curl --silent --show-error --max-time 5 \
             --header 'Content-Type: application/json' \
             --header 'Origin: http://127.0.0.1:8093' \
             --cookie-jar "$RUNNER_TEMP/admin.cookies" \
             --data-binary "@$RUNNER_TEMP/login.json" \
             --output /dev/null --write-out '%{http_code}' \
-            "$base/api/session/login")
-          assert_status 204 "$login_status" 'administrator login'
+            "$base/api/intents")
+          assert_status 200 "$login_status" 'named administrator login'
 
           curl --silent --fail --max-time 5 --cookie "$RUNNER_TEMP/admin.cookies" \
             "$base/api/session" > "$RUNNER_TEMP/session.json"
@@ -351,7 +356,7 @@ jobs:
           # Values that must never appear in a public repo.
           # Placeholders are filtered out: docs/SECRETS.md has to show the shape
           # of each value, so the literal variable names appear there by design.
-          hits=$(git grep -nIE '(STEAM_PASSWORD|CURSEFORGE_API_KEY|DISCORD_WEBHOOK_URL|MINECRAFT_ADMIN_PASSWORD_HASH|MINECRAFT_SESSION_SECRET|SCHEMATIC_VIEWER_ADMIN_TOKEN)[[:space:]]*=[[:space:]]*["'"'"']?[A-Za-z0-9$./_-]{12,}' -- . \
+          hits=$(git grep -nIE '(STEAM_PASSWORD|CURSEFORGE_API_KEY|DISCORD_WEBHOOK_URL|MINECRAFT_ADMIN_PASSWORD_HASH|MINECRAFT_SESSION_SECRET|SCHEMATIC_VIEWER_ADMIN_TOKEN|PELICAN(_CLIENT)?_API_KEY)[[:space:]]*=[[:space:]]*["'"'"']?[A-Za-z0-9$./_-]{12,}' -- . \
                  | grep -viE 'your-|change-me|example|placeholder|disposable|getenv|environ|[<{]' || true)
           if [ -n "$hits" ]; then
             echo "a real-looking secret is committed:"; echo "$hits"; exit 1

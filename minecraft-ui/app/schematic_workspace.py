@@ -11,7 +11,12 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 
-from .admin_session import AdminSessionAccess
+
+class ViewerAccess(Protocol):
+    """Request-scoped authorization used by the private viewer proxy."""
+
+    def viewer_credential(self, request: Request, path: str) -> str | None: ...
+
 
 _METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
@@ -204,16 +209,13 @@ def _request_headers(request: Request) -> dict[str, str]:
 
 def _response_headers(headers: list[tuple[str, str]]) -> dict[str, str]:
     return {
-        name: value
-        for name, value in headers
-        if name.lower() not in _RESPONSE_HEADERS_TO_REMOVE
+        name: value for name, value in headers if name.lower() not in _RESPONSE_HEADERS_TO_REMOVE
     }
 
 
-def install_schematic_workspace(
-    app: FastAPI, viewer: ViewerAdapter, access: AdminSessionAccess
-) -> None:
+def install_schematic_workspace(app: FastAPI, viewer: ViewerAdapter, access: ViewerAccess) -> None:
     """Install the schematic proxy routes into the FastAPI application."""
+
     @app.get("/schematics", include_in_schema=False)
     async def schematics_redirect() -> RedirectResponse:
         return RedirectResponse("/schematics/", status_code=308)
@@ -254,17 +256,11 @@ def install_schematic_workspace(
                 )
             )
         except UploadTooLarge:
-            return JSONResponse(
-                {"detail": "schematic upload exceeds 250 MiB"}, status_code=413
-            )
+            return JSONResponse({"detail": "schematic upload exceeds 250 MiB"}, status_code=413)
         except ViewerTimeout:
-            return JSONResponse(
-                {"detail": "schematic conversion timed out"}, status_code=504
-            )
+            return JSONResponse({"detail": "schematic conversion timed out"}, status_code=504)
         except ViewerConnectionError:
-            return JSONResponse(
-                {"detail": "schematic viewer is unavailable"}, status_code=502
-            )
+            return JSONResponse({"detail": "schematic viewer is unavailable"}, status_code=502)
         response_headers = _response_headers(upstream.headers)
         location = response_headers.get("location")
         if location and location.startswith("/"):

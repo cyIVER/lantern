@@ -30,9 +30,7 @@ class LoginRateLimiter:
         """Return seconds until the client may retry, or None if attempts remain."""
         now = time.monotonic()
         recent = [
-            value
-            for value in self._failures.get(client_host, [])
-            if now - value < self._window
+            value for value in self._failures.get(client_host, []) if now - value < self._window
         ]
         self._failures[client_host] = recent
         if len(recent) < self._attempts:
@@ -83,7 +81,9 @@ class AdminSessionAccess:
                 settings.allow_insecure_admin,
             )
         if not all(paths):
-            raise ValueError("admin auth requires password hash, session secret, and viewer token files")
+            raise ValueError(
+                "admin auth requires password hash, session secret, and viewer token files"
+            )
         password_hash = paths[0].read_text(encoding="utf-8").strip()  # type: ignore[union-attr]
         session_secret = paths[1].read_bytes().strip()  # type: ignore[union-attr]
         viewer_token = paths[2].read_text(encoding="utf-8").strip()  # type: ignore[union-attr]
@@ -103,9 +103,7 @@ class AdminSessionAccess:
     @property
     def enabled(self) -> bool:
         """Whether credentials are complete and secure/test transport is allowed."""
-        return self.session_secret is not None and (
-            self.secure_cookie or self.allow_insecure_admin
-        )
+        return self.session_secret is not None and (self.secure_cookie or self.allow_insecure_admin)
 
     def verify_password(self, password: str) -> bool:
         """Verify the provided password against the stored Argon2 hash."""

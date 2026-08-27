@@ -97,6 +97,24 @@ SCHEMATIC_CHECKSUM_TMP=
 SCHEMATIC_VIEWER_IMAGE='ghcr.io/scotsgamez/create-schematic-viewer:v1.0.1@sha256:d5501af9de95f9b89484ae4e4dbea098b0cdd3e86af3b19e50976855b533444c'
 SCHEMATIC_VIEWER_UID=
 SCHEMATIC_VIEWER_GID=
+PORTAL_BACKUP_TMP=
+PORTAL_CONTAINER=
+PORTAL_SNAPSHOT_CONTAINER=
+cleanup_portal_snapshot() {
+  local cleanup_ok=true
+  if [ -n "$PORTAL_CONTAINER" ] && [ -n "$PORTAL_SNAPSHOT_CONTAINER" ]; then
+    if docker exec "$PORTAL_CONTAINER" rm -f -- "$PORTAL_SNAPSHOT_CONTAINER" >/dev/null 2>&1; then
+      PORTAL_SNAPSHOT_CONTAINER=
+    else
+      cleanup_ok=false
+    fi
+  fi
+  if [ -n "$PORTAL_BACKUP_TMP" ]; then
+    rm -rf -- "$PORTAL_BACKUP_TMP"
+    PORTAL_BACKUP_TMP=
+  fi
+  [ "$cleanup_ok" = true ]
+}
 restart_schematic_viewer() {
   if [ "$SCHEMATIC_VIEWER_WAS_RUNNING" = true ]; then
     if docker compose start schematic-viewer >/dev/null 2>&1; then
@@ -121,6 +139,7 @@ finish_backup() {
   local exit_status=$?
   trap - EXIT
   resume_minecraft_saves || true
+  cleanup_portal_snapshot || true
   restart_schematic_viewer
   [ -z "$CHECKSUM_TMP" ] || rm -f -- "$CHECKSUM_TMP"
   CHECKSUM_TMP=
@@ -387,6 +406,95 @@ else
   note "  no $SCHEMATIC_VOLUME -- skipping (expected before the release gate)"
 fi
 
+# ------------------------------------------------------ Minecraft portal DB
+# The named-admin portal keeps its review queue and audit trail in SQLite.
+# Snapshot the live database through SQLite's online backup API inside the
+# running minecraft-ui container. The destination is the container's /tmp
+# tmpfs, so neither the UI nor Minecraft, Wings, or the viewer is stopped.
+note 'Minecraft admin portal database'
+PORTAL_VOLUME='lantern-minecraft-ui-data'
+if docker volume inspect "$PORTAL_VOLUME" >/dev/null 2>&1; then
+  PORTAL_SNAPSHOT_CONTAINER=
+  PORTAL_CONTAINER=
+  if ! PORTAL_CONTAINER=$(docker compose ps -q minecraft-ui 2>/dev/null) \
+     || [ -z "$PORTAL_CONTAINER" ] \
+     || ! PORTAL_RUNNING=$(docker inspect -f '{{.State.Running}}' "$PORTAL_CONTAINER" 2>/dev/null) \
+     || [ "$PORTAL_RUNNING" != true ]; then
+    fail_code minecraft.portal_snapshot_failed \
+      '  running minecraft-ui container is unavailable; portal database was not backed up'
+    cleanup_portal_snapshot || fail_code minecraft.portal_snapshot_cleanup_failed \
+      '  portal database temporary snapshot could not be removed'
+  elif ! PORTAL_BACKUP_TMP=$(mktemp -d "$OUT/.minecraft-portal-backup.XXXXXX"); then
+    fail_code minecraft.portal_snapshot_failed \
+      '  portal database backup staging could not be allocated'
+    cleanup_portal_snapshot || fail_code minecraft.portal_snapshot_cleanup_failed \
+      '  portal database temporary snapshot could not be removed'
+  else
+    PORTAL_SNAPSHOT_CONTAINER="/tmp/lantern-portal-backup-${STAMP}-$$.sqlite3"
+    PORTAL_SNAPSHOT_HOST="$PORTAL_BACKUP_TMP/minecraft-portal.sqlite3"
+    if timeout 120 docker exec "$PORTAL_CONTAINER" python - "$PORTAL_SNAPSHOT_CONTAINER" <<'PY'
+from pathlib import Path
+import sqlite3
+import sys
+
+snapshot = Path(sys.argv[1])
+snapshot.unlink(missing_ok=True)
+source = sqlite3.connect("file:/data/portal.sqlite3?mode=ro", uri=True, timeout=30)
+destination = sqlite3.connect(snapshot)
+try:
+    source.backup(destination, pages=256, sleep=0.05)
+    if destination.execute("PRAGMA quick_check").fetchone() != ("ok",):
+        raise RuntimeError("portal snapshot failed SQLite quick_check")
+finally:
+    destination.close()
+    source.close()
+PY
+    then
+      if docker cp "$PORTAL_CONTAINER:$PORTAL_SNAPSHOT_CONTAINER" "$PORTAL_SNAPSHOT_HOST" >/dev/null 2>&1 \
+         && [ -s "$PORTAL_SNAPSHOT_HOST" ] \
+         && python3 - "$PORTAL_SNAPSHOT_HOST" <<'PY'
+from pathlib import Path
+import sqlite3
+import sys
+
+snapshot = Path(sys.argv[1])
+if snapshot.stat().st_size == 0:
+    raise SystemExit(1)
+connection = sqlite3.connect(f"{snapshot.resolve().as_uri()}?mode=ro&immutable=1", uri=True)
+try:
+    if connection.execute("PRAGMA quick_check").fetchone() != ("ok",):
+        raise SystemExit(1)
+    if connection.execute("SELECT COUNT(*) FROM sqlite_schema").fetchone()[0] == 0:
+        raise SystemExit(1)
+finally:
+    connection.close()
+PY
+      then
+        if chmod 600 "$PORTAL_SNAPSHOT_HOST" \
+           && mv -- "$PORTAL_SNAPSHOT_HOST" "$OUT/minecraft-portal.sqlite3"; then
+          ok "  minecraft-portal.sqlite3 ($(du -h "$OUT/minecraft-portal.sqlite3" | cut -f1))"
+        else
+          rm -f -- "$OUT/minecraft-portal.sqlite3"
+          fail_code minecraft.portal_snapshot_failed \
+            '  validated portal database snapshot could not be published'
+        fi
+      else
+        rm -f -- "$OUT/minecraft-portal.sqlite3"
+        fail_code minecraft.portal_snapshot_failed \
+          '  portal database snapshot copy or validation failed'
+      fi
+    else
+      rm -f -- "$OUT/minecraft-portal.sqlite3"
+      fail_code minecraft.portal_snapshot_failed \
+        '  SQLite online backup of the portal database failed'
+    fi
+    cleanup_portal_snapshot || fail_code minecraft.portal_snapshot_cleanup_failed \
+      '  portal database temporary snapshot could not be removed'
+  fi
+else
+  note "  no $PORTAL_VOLUME -- skipping (expected before the admin portal release gate)"
+fi
+
 # --------------------------------------------------------------------- cs2
 note 'CS2 config and plugins'
 CS2_CFG="/var/lib/pelican/volumes/${CS2_UUID}/game/csgo"
@@ -467,7 +575,7 @@ write_descriptive_manifest() {
 
 safe_backup_basename() {
   case "$1" in
-    BACKUP_STATUS.json|MANIFEST.txt|config.tgz|cs2-config.tgz|databases.sql.gz|etc-pelican.tgz|minecraft-world.tgz|schematic-viewer-data.tgz|schematic-viewer-data.tgz.sha256|stardew-config.tgz|stardew-saves.tgz)
+    BACKUP_STATUS.json|MANIFEST.txt|config.tgz|cs2-config.tgz|databases.sql.gz|etc-pelican.tgz|minecraft-portal.sqlite3|minecraft-world.tgz|schematic-viewer-data.tgz|schematic-viewer-data.tgz.sha256|stardew-config.tgz|stardew-saves.tgz)
       return 0
       ;;
     *) return 1 ;;

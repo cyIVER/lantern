@@ -14,7 +14,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /srv
 
 RUN groupadd --system --gid 10001 lantern \
-    && useradd --system --uid 10001 --gid lantern --home-dir /nonexistent --shell /usr/sbin/nologin lantern
+    && useradd --system --uid 10001 --gid lantern --home-dir /nonexistent --shell /usr/sbin/nologin lantern \
+    && install --directory --owner=lantern --group=lantern --mode=0750 /data
 
 COPY --from=uv /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./

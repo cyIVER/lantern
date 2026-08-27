@@ -23,8 +23,8 @@ lives in a Windows store.
 > On the VM that archive is written mode 600. On D: it is an ordinary file with
 > ordinary permissions. **Treat `D:\LANtern-Backups` as a secret store**: it holds
 > every database password, the RCON password, the Pelican API key, the CurseForge
-> key, the Steam refresh token and, after the Minecraft UI release, its three
-> file secrets, in fourteen dated copies. Do not sync that
+> key, the Steam refresh token and, after the Minecraft admin-portal release,
+> its four file secrets, in fourteen dated copies. Do not sync that
 > folder anywhere, and if you ever hand someone a backup set, hand them one with
 > `config.tgz` removed.
 >
@@ -197,20 +197,26 @@ prints its own argv to the console, which leaks them into the log — that is wh
 
 ## 5. Minecraft UI and schematic-library secrets
 
-The release-gated Minecraft UI uses three files under
-`/opt/lantern/stack/secrets/`. None belongs in `.env`, Git, a container image or
-a browser response.
+The deployed Minecraft workspace and pending named-admin portal use four files
+under `/opt/lantern/stack/secrets/`. None belongs in `.env`, Git, a container
+image, logs or a browser response.
 
 | File | Purpose | Consumers |
 |---|---|---|
-| `minecraft-admin-password-hash` | Argon2 hash of the curation password; never the password itself | `minecraft-ui` |
-| `minecraft-session-secret` | HMAC-signs the eight-hour administrator cookie | `minecraft-ui` |
-| `schematic-viewer-admin-token` | Authenticates the UI's private mutation requests | `minecraft-ui`, `schematic-viewer` |
+| `minecraft-admins.json` | Named portal users, Argon2 password hashes and roles | `minecraft-ui` |
+| `minecraft-session-secret` | HMAC-signs the eight-hour named-admin cookie and confirmation challenges | `minecraft-ui` |
+| `schematic-viewer-admin-token` | Authenticates private viewer mutation requests | `minecraft-ui`, `schematic-viewer` |
+| `pelican-client-api-key` | Authenticates Minecraft-shaped file, mod, backup and restore calls to Pelican | `minecraft-ui` only |
 
-Create them only during the approved release gate, after the Minecraft UI image
-has been built. The password is read from the terminal and the hash is written
-directly into the mounted directory; it never appears in shell history or
-process arguments.
+The initial identity directory contains portal users `iveri` and `scotlandf`.
+Each person chooses their own portal password at the terminal. The JSON file
+stores only Argon2 hashes. The portal's immutable local audit log attributes
+their actions by username.
+
+Create or replace the files only during an approved release gate, after building
+the reviewed Minecraft UI image. First create a Pelican **client API token** from
+an administrator account in Pelican. Give the token only to the server-side
+secret prompt below; never paste it into browser code or commit it.
 
 ```bash
 cd /opt/lantern/stack
@@ -220,48 +226,71 @@ install -d -m 700 secrets
 docker compose build minecraft-ui
 docker run --rm -it --user "$(id -u):$(id -g)" \
   -v "$PWD/secrets:/secrets" \
-  --entrypoint python lantern/minecraft-ui:latest -c \
-  'from getpass import getpass; from pathlib import Path; from argon2 import PasswordHasher; Path("/secrets/minecraft-admin-password-hash").write_text(PasswordHasher().hash(getpass("New Minecraft admin password: ")) + "\n")'
+  --entrypoint python lantern/minecraft-ui:latest \
+  -m app.admin_cli /secrets/minecraft-admins.json \
+  iveri:iveri scotlandf:scotlandf
 
 openssl rand -base64 48 > secrets/minecraft-session-secret
 openssl rand -base64 48 > secrets/schematic-viewer-admin-token
+read -rsp 'Pelican client API token: ' pelican_client_token; printf '\n'
+printf '%s\n' "$pelican_client_token" > secrets/pelican-client-api-key
+unset pelican_client_token
+
 secret_gid=$(id -g)
 chgrp "$secret_gid" secrets/*
 chmod 640 secrets/*
 ```
 
-Set `LANTERN_SECRET_GID` in `stack/.env` to the numeric value printed by
-`id -g`. Compose adds that group to both otherwise non-root containers. This is
-required because file-backed Compose secrets retain their host ownership and
-mode; `0600` files would be unreadable inside the hardened containers. Do not
-make the files world-readable.
+The CLI currently requires `username:alias` records for format compatibility.
+Pelican operations do not impersonate those aliases: they use the single
+server-side `pelican-client-api-key`, so Pelican itself may attribute calls to
+that service identity rather than `iveri` or `scotlandf`.
 
-The current LANtern deployment is plain HTTP, so administrator sign-in and every
-library mutation are disabled even when these secrets exist. Anonymous browsing,
-inspection, conversion and downloads remain available. Never set
-`MINECRAFT_ALLOW_INSECURE_ADMIN=true` on the VM: that override is reserved for
-isolated CI. To enable administration, put the UI behind HTTPS and set
-`MINECRAFT_SECURE_COOKIE=true` in `stack/.env`, then selectively recreate
-`minecraft-ui`; the signed cookie will then be `HttpOnly`,
-`SameSite=Strict`, `Secure`, and time-limited. Never publish port 8093 directly
-to the internet.
+Set `LANTERN_SECRET_GID` in `stack/.env` to the numeric value printed by
+`id -g`. Compose grants that group to the otherwise non-root consumers. This is
+required because file-backed Compose secrets retain host ownership and mode;
+`0600` would be unreadable inside the hardened containers. Do not make the files
+world-readable.
+
+LANtern intentionally runs the portal over HTTP on a trusted private LAN. Its
+accepted deployment settings are:
+
+```dotenv
+MINECRAFT_ALLOW_INSECURE_ADMIN=true
+MINECRAFT_SECURE_COOKIE=false
+```
+
+The signed session remains `HttpOnly`, `SameSite=Strict` and time-limited, but it
+is not protected by transport encryption. Exact same-origin checks remain in
+force against the configured `MINECRAFT_TRUSTED_BROWSER_ORIGINS`; a forged Host
+header cannot expand that allowlist. Never publish port `8093` to the internet.
+
+The named-user file is read on each lookup. Re-running `python -m app.admin_cli`
+atomically replaces the directory; changing a record's credential version
+revokes that user's existing sessions. The provided CLI currently creates the
+complete initial directory with credential version 1, so coordinate password
+changes for both named users when using it.
 
 Rotate one secret at a time:
 
-- **Admin password:** rerun the `docker run` command, then
-  `docker compose up -d --no-deps --force-recreate minecraft-ui`.
-- **Session secret:** replace it with `openssl rand -base64 48`, set group to
-  `id -g` and mode 640, then recreate only `minecraft-ui`. Existing admin
-  sessions are invalidated.
-- **Viewer token:** replace it with `openssl rand -base64 48`, set group to
-  `id -g` and mode 640, then run
-  `docker compose up -d --no-deps --force-recreate schematic-viewer minecraft-ui`
-  so both consumers change together.
+- **Named admins:** rerun the interactive `docker run` command and recreate only
+  `minecraft-ui` if the mount does not expose the replacement immediately.
+- **Session secret:** replace it with `openssl rand -base64 48`, restore group and
+  mode, then recreate only `minecraft-ui`. Every existing session is invalidated.
+- **Viewer token:** replace it with `openssl rand -base64 48`, restore group and
+  mode, then recreate `schematic-viewer` and `minecraft-ui` together.
+- **Pelican token:** revoke the old token in Pelican, create a replacement, write
+  it through the silent prompt, restore group and mode, then recreate only
+  `minecraft-ui`.
 
-These commands never restart Wings or the Minecraft game. The viewer-token
-rotation briefly interrupts only the schematic workspace. All three files are
-included in the nightly mode-600 `config.tgz`; old backup sets retain old values
-and must be handled as described under [If a secret leaks](#if-a-secret-leaks).
+These rotations never restart Wings or the Minecraft game. Viewer-token rotation
+briefly interrupts only the schematic workspace. All four files are included in
+the nightly mode-600 `config.tgz`; old backup sets retain old values and must be
+handled as described under [If a secret leaks](#if-a-secret-leaks).
+
+Normal logout also revokes that session ID in the persistent portal database
+until its original expiry. Rotating the session secret is the broader action that
+invalidates every current session at once.
 
 ---
 

@@ -385,7 +385,7 @@ an unmeasured guess about what the nesting actually cost — see the next entry.
 | | |
 |---|---|
 | Repo | `/opt/lantern` on the VM — `/opt/lantern/stack`, `/opt/lantern/stardew` |
-| Access | `ssh lantern` from Windows (alias in `C:\Users\iveri\.ssh\config`, key `lantern_vm`, VM user `iverson`) |
+| Access | `ssh lantern` from a workstation-specific SSH alias and key |
 | Control script | symlinked to `/usr/local/bin/lantern`, so `lantern status` works anywhere on the VM |
 | VM lifecycle | `VBoxManage startvm lantern --type headless` / `VBoxManage controlvm lantern acpipowerbutton`; serial console logged to `E:\LANtern-VM\serial.log` |
 | Windows host | back on DHCP (currently `192.168.0.231`) and no longer part of serving anything |

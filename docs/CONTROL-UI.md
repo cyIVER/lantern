@@ -1,15 +1,14 @@
 # The control UIs
 
 One FastAPI service on `:8090` serves two pages, a second application on `:8092`
-serves the farm, and the release-gated Minecraft application is prepared for
-`:8093`.
+serves the farm, and the deployed Minecraft application runs on `:8093`.
 
 | | | |
 |---|---|---|
 | **LANtern landing page** | <http://192.168.0.115:8090/> | Which game is running, buttons to switch, and the host dashboard |
 | **CS2 control** | <http://192.168.0.115:8090/cs2> | Players, maps, mode, match control, loadouts, RCON console |
 | **Stardew control** | <http://192.168.0.115:8092> | Its own application in `stardew-ui/` — see [STARDEW.md](STARDEW.md) |
-| **Minecraft UI** | <http://192.168.0.115:8093> | Always-on Minecraft home and `/schematics/` workspace. Implemented; deployment pending the release gate |
+| **Minecraft UI** | <http://192.168.0.115:8093> | Deployed Minecraft home and `/schematics/` workspace; expanded named-admin portal pending release |
 
 The landing, CS2 and Stardew UIs have no login. Minecraft schematic browsing is
 also anonymous, but persistent library curation has a separate administrator
@@ -25,8 +24,10 @@ page links out to each game UI rather than embedding it: they are separate
 applications with their own themes, and wrapping them would mean one owning the
 others' chrome for no gain.
 
-Pelican is still there for everything the panel does better — files, backups,
-schedules, subusers, creating servers. None of this replaces it; it sits on top.
+Pelican is still there for its complete management surface — schedules,
+subusers, server creation and operations outside the portal's narrow policies.
+The Minecraft Admin tab links to Pelican in a new tab. It is not embedded:
+Pelican retains its own login and frame protections.
 
 ---
 
@@ -83,8 +84,8 @@ to make visible is the one restarting in a loop.
 The Minecraft UI link is gated on a **server-side TCP probe** of `:8093`. It has to
 be server-side: a cross-origin probe from the page cannot tell "nothing listening"
 from "listening, but that is not an image", so it would report every port as up.
-A TCP connect knows the difference. The application is now implemented, but the
-probe will continue hiding its link until the release gate actually deploys it.
+A TCP connect knows the difference. The deployed UI therefore appears
+automatically when it is healthy and disappears when nothing answers.
 
 ## Minecraft UI and SchematicWorkspace
 
@@ -94,19 +95,53 @@ prefix-stripping, streaming reverse proxy to a Create Schematic Viewer sidecar
 on private port `4173`; that sidecar has no host port, Docker socket, Wings
 network or game-volume mount.
 
-Anonymous requests can browse, inspect, convert and download schematics. When
-the UI is served through HTTPS, administrator sign-in validates a signed session
-and injects a file-mounted trust token only on the private hop to the viewer. It
-strips any client-supplied trust, forwarding, cookie and authorization headers.
-Persistent library data is isolated in `lantern-schematic-viewer-data` and is
-included in the nightly backup.
+The deployed `main` baseline provides the home and schematic workspace. The
+expanded portal on `feature/minecraft-admin-portal` adds three role-aware tabs:
 
-LANtern is plain HTTP by design, so administrator sign-in and all mutations are
-disabled by default; anonymous access remains useful. Exact same-origin checks
-are defense in depth, not a replacement for transport security. Administration
-requires HTTPS with `MINECRAFT_SECURE_COOKIE=true`; the insecure override is for
-isolated CI only. Port 8093 is LAN-only and must never be internet-published in
-this configuration.
+| Tab | LAN user | Named admin |
+|---|---|---|
+| **Overview** | State plus Start / Restart / Stop, using the same one-game-at-a-time confirmation as the landing page | Same |
+| **Schematics** | Browse, inspect, convert, download and upload; promotion can be requested | Same, plus private viewer mutation rights |
+| **Admin** | Sign-in prompt only | Review queue, allowlisted files, staged mods, verified backups/restores and audit activity |
+
+Uploads autofill title, format tags and the unrestricted `CC0-1.0` license. A
+promotion request is published only after the viewer validates it, the filename
+and format are supported, the content is nonempty and unique, and the other hard
+requirements pass. Anything needing judgment remains in the durable review queue
+and increments the visible pending badge; admins can publish or reject it.
+
+Named accounts are `iveri` and `scotlandf`. LANtern writes immutable local audit
+records with the named actor. Pelican operations use one server-side service
+token, so upstream Pelican may show the service identity rather than the person.
+Sessions are signed, expiring, `HttpOnly` and `SameSite=Strict`. Logout adds a
+persistent server-side revocation through the token's original expiry. LANtern
+explicitly accepts plain HTTP on its trusted private LAN, so deployment sets
+`MINECRAFT_ALLOW_INSECURE_ADMIN=true` and `MINECRAFT_SECURE_COOKIE=false`; the
+traffic is not transport-encrypted and port `8093` must never be internet-published.
+
+The viewer trust token and Pelican client token are file-mounted secrets used only
+on private server-to-server hops. Client-supplied trust, forwarding, cookie and
+authorization headers are stripped. Browser trust is an explicit allowlist of
+exact scheme/host/port origins, independent of the request's `Host` header, and
+admin upload authorization happens before the body is buffered. File editing is
+constrained to allowlisted UTF-8 text configuration with revision checks; mod
+uploads are validated and staged disabled. Mutations claim durable idempotency
+keys before changing state, and destructive confirmation challenges bind to the
+exact request so replay cannot execute it twice.
+
+The pending queue holds at most 500 submissions or 2 GiB and accepts 20 uploads
+per source IP per hour. After 30 days, expired pending payload bytes are removed
+from storage and quota while metadata and workflow events remain. Restore accepts
+only a completed backup carrying a SHA-256 checksum. It stops Minecraft, proves
+Pelican reports it offline before making another verified safety backup and again
+before replacement, never auto-restarts it, and returns
+`server_state=stopped`.
+
+Persistent library data is isolated in `lantern-schematic-viewer-data`; review
+and append-only audit state is in `lantern-minecraft-ui-data`. Preserve both
+volumes during selective deployment and rollback. The current pinned viewer
+v1.0.1 includes the Asset Admin overlay fix, so this portal phase changes LANtern
+only. A verified fresh backup is required before the first portal cutover.
 
 ---
 
@@ -185,8 +220,10 @@ and sending one makes CS2 return *nothing at all*. `rcon.py` instead waits the
 full timeout for the first packet then drains with a short idle window.
 
 **Caddy matches on the `APP_URL` host.** Requesting `http://panel` (the compose
-service name) returns an empty `200` — not an error, just nothing. The API base
-must be the LAN IP.
+service name) with its default `Host` returns an empty `200`—not an error, just
+nothing. Existing clients use the LAN IP directly. The Minecraft portal keeps
+traffic on its private backplane by using `http://panel` with
+`PELICAN_VIRTUAL_HOST=192.168.0.115`.
 
 **Bots carry synthetic `9007...` SteamIDs** that no admin command accepts, so the
 UI kicks them by name with `bot_kick` instead.
