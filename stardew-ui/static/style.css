@@ -74,7 +74,7 @@ body {
   font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: .02em;
-  color: #fff6e4;
+  color: var(--parchment);
   margin: 0;
   text-shadow: 0 2px 0 rgba(0, 0, 0, .3);
 }
@@ -192,7 +192,9 @@ h2 {
   border-radius: 5px;
   border: 2px solid var(--wood-dark);
   background: var(--wood);
-  color: #fff6e4;
+  /* --parchment, not a fixed cream: --wood inverts between themes and this
+     has to invert with it, or the label vanishes into the button in dark. */
+  color: var(--parchment);
   cursor: pointer;
   box-shadow: 0 2px 0 var(--wood-dark);
   transition: transform .06s, box-shadow .06s;
@@ -202,8 +204,8 @@ h2 {
 .btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .btn-quiet {
   background: transparent;
-  color: #fff6e4;
-  border-color: rgba(255, 255, 255, .45);
+  color: var(--parchment);
+  border-color: currentColor;
   box-shadow: none;
 }
 .btn-warn { background: var(--rust); border-color: #7e3520; box-shadow: 0 2px 0 #7e3520; }
@@ -385,10 +387,20 @@ code { font-family: Silkscreen, monospace; font-size: .82em; }
 
 /* Power controls. Green to start, red to stop -- the same colours the LANtern
    landing page uses, because they do the same thing to the same server. */
-.btn-go   { border-color: var(--green); color: var(--green); font-weight: 600; }
-.btn-go:hover:not(:disabled)   { background: var(--green-soft); }
-.btn-stop { border-color: var(--rust);  color: var(--rust);  font-weight: 600; }
-.btn-stop:hover:not(:disabled) { background: var(--parchment); }
+.btn-go {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--parchment);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .28);
+}
+.btn-stop {
+  background: var(--rust);
+  border-color: var(--rust);
+  color: var(--parchment);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .28);
+}
+.btn-go:hover:not(:disabled),
+.btn-stop:hover:not(:disabled) { filter: brightness(1.08); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Confirmation. Not window.confirm(): this has to name what it would shut
