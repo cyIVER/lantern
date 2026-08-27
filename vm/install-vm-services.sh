@@ -86,6 +86,40 @@ systemctl is-enabled lantern-dbnet.timer >/dev/null 2>&1 \
   && ok 'lantern-dbnet.timer enabled (runs every 60s, idempotent)' \
   || die 'lantern-dbnet.timer did not enable'
 
+step 'Swap'
+
+# The VM has ~17.6 GB usable and Minecraft is allocated 11 GB of it. Without
+# swap, a transient spike does not degrade -- the kernel OOM killer picks a
+# process and ends it, with no warning and typically mid-save. A small swap
+# file turns that into a stutter and, more usefully, into a signal: the control
+# UI's swap gauge warns at the first 1% of use, so "you are over-allocated"
+# becomes something you can see coming rather than something you find out about
+# from a friend whose world is gone.
+#
+# swappiness 10, not the default 60: this is a shock absorber, not tiered
+# memory. At 60 the kernel pages out idle game-server heap during normal play
+# and you feel it.
+SWAP_GB="${SWAP_GB:-4}"
+if swapon --show 2>/dev/null | grep -q /swapfile; then
+  ok "swap already active ($(free -h | awk '/Swap:/{print $2}'))"
+else
+  sudo swapoff -a 2>/dev/null
+  # fallocate leaves holes on some filesystems, which swapon rejects.
+  sudo dd if=/dev/zero of=/swapfile bs=1M count=$((SWAP_GB * 1024)) status=none
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile >/dev/null
+  sudo swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab \
+    || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+  swapon --show | grep -q /swapfile \
+    && ok "${SWAP_GB} GB swap active and in /etc/fstab" \
+    || bad 'swap did not come up'
+fi
+
+printf 'vm.swappiness=10\n' | sudo tee /etc/sysctl.d/99-lantern-swap.conf >/dev/null
+sudo sysctl -q -w vm.swappiness=10
+ok "swappiness $(cat /proc/sys/vm/swappiness) (only swaps under real pressure)"
+
 step 'Convenience'
 
 # `lantern` is the one-server-at-a-time switch. On Windows it needed a .cmd
