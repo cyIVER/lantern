@@ -62,3 +62,27 @@ def test_ci_uses_the_read_only_cross_repository_viewer_key() -> None:
     )
     assert 'chmod 640 stack/secrets/*' in secret_step["run"]
     assert 'LANTERN_SECRET_GID=$secret_gid' in secret_step["run"]
+
+
+def test_ci_integration_assertions_report_the_failed_boundary() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["minecraft-integration"]["steps"]
+    verify = next(
+        step
+        for step in steps
+        if step.get("name") == "verify health, proxy, and administrator boundary"
+    )["run"]
+
+    assert "assert_status()" in verify
+    assert "for _ in $(seq 1 45)" in verify
+    assert 'if [ "$viewer_health" = healthy ]' in verify
+    for boundary in (
+        "schematics redirect",
+        "administrator login",
+        "cross-origin mutation",
+        "viewer container health",
+        "viewer host bindings",
+    ):
+        assert boundary in verify

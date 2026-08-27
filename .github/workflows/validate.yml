@@ -140,6 +140,16 @@ jobs:
           set -euo pipefail
           base=http://127.0.0.1:8093
 
+          assert_status() {
+            expected=$1
+            actual=$2
+            boundary=$3
+            if [ "$actual" != "$expected" ]; then
+              printf '%s: expected %s, received %s\n' "$boundary" "$expected" "$actual" >&2
+              return 1
+            fi
+          }
+
           ready=false
           for _ in $(seq 1 60); do
             if curl --silent --fail --max-time 5 "$base/readyz" > "$RUNNER_TEMP/ready.json"; then
@@ -163,7 +173,7 @@ jobs:
           redirect_status=$(curl --silent --show-error --max-time 5 \
             --dump-header "$RUNNER_TEMP/redirect.headers" --output /dev/null \
             --write-out '%{http_code}' "$base/schematics")
-          test "$redirect_status" = 308
+          assert_status 308 "$redirect_status" 'schematics redirect'
           tr -d '\r' < "$RUNNER_TEMP/redirect.headers" > "$RUNNER_TEMP/redirect.normalized"
           grep --ignore-case --quiet '^location: /schematics/$' "$RUNNER_TEMP/redirect.normalized"
 
@@ -191,7 +201,7 @@ jobs:
             --data-binary "@$RUNNER_TEMP/login.json" \
             --output /dev/null --write-out '%{http_code}' \
             "$base/api/session/login")
-          test "$login_status" = 204
+          assert_status 204 "$login_status" 'administrator login'
 
           curl --silent --fail --max-time 5 --cookie "$RUNNER_TEMP/admin.cookies" \
             "$base/api/session" > "$RUNNER_TEMP/session.json"
@@ -212,7 +222,7 @@ jobs:
             --request POST --header 'Origin: http://attacker.invalid' \
             --data-binary 'synthetic-schematic' --output /dev/null \
             --write-out '%{http_code}' "$base/schematics/api/convert")
-          test "$cross_origin_status" = 403
+          assert_status 403 "$cross_origin_status" 'cross-origin mutation'
 
           published=$(docker compose --file stack/compose.yml port schematic-viewer 4173 2>/dev/null || true)
           if [ -n "$published" ]; then
@@ -224,10 +234,20 @@ jobs:
             exit 1
           fi
           viewer_container=$(docker compose --file stack/compose.yml ps --quiet schematic-viewer)
-          viewer_health=$(docker inspect --format '{{.State.Health.Status}}' "$viewer_container")
-          test "$viewer_health" = healthy
+          viewer_health=unknown
+          for _ in $(seq 1 45); do
+            viewer_health=$(docker inspect --format '{{.State.Health.Status}}' "$viewer_container")
+            if [ "$viewer_health" = healthy ]; then
+              break
+            fi
+            sleep 2
+          done
+          assert_status healthy "$viewer_health" 'viewer container health'
           bindings=$(docker inspect --format '{{json .HostConfig.PortBindings}}' "$viewer_container")
-          test "$bindings" = null || test "$bindings" = '{}'
+          if [ "$bindings" != null ] && [ "$bindings" != '{}' ]; then
+            printf 'viewer host bindings: expected none, received %s\n' "$bindings" >&2
+            exit 1
+          fi
 
       - name: show isolated service logs on failure
         if: failure()
